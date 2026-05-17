@@ -1,5 +1,6 @@
 package com.falldetector.diedaobao.assist
 
+import android.content.ComponentName
 import android.content.Context
 import com.falldetector.diedaobao.util.AppLogger
 import android.content.Intent
@@ -103,7 +104,8 @@ object RemoteAssistManager {
                 when (event) {
                     is WSClient.WSEvent.AssistRequest -> {
                         // WS 推送协助请求（替代 poll_request 轮询）
-                        val requestId = "${event.fromId}_${System.currentTimeMillis()/1000}"
+                        // v26: 用 guardianId+requestTime 去重，不要用 currentTimeMillis（每秒不同永远匹配不上）
+                        val requestId = "${event.guardianId}_${event.requestTime}"
                         if (requestId == lastNotifiedRequestId) return@collect
                         lastNotifiedRequestId = requestId
                         Log.i(TAG, "[WS] 收到协助请求: from=${event.guardianName}")
@@ -160,8 +162,10 @@ object RemoteAssistManager {
                     is WSClient.WSEvent.AssistEnd -> {
                         Log.i(TAG, "[WS] 收到协助结束信号")
                         stopSignalPolling()
+                        // v26: 用 onSessionEnded 只回调一次，防止健康检查重启轮询后重复触发
                         withContext(Dispatchers.Main) {
                             onSessionEnded?.invoke()
+                            onSessionEnded = null  // 清空回调，防止重复
                         }
                     }
 
@@ -212,8 +216,8 @@ object RemoteAssistManager {
                     }
                     val response = pollForRequest(context)
                     if (response.hasRequest && response.request != null) {
-                        // v19.7: 请求去重 — 同一个请求只通知一次，防止双弹窗
-                        val requestId = "${response.request.fromId}_${response.request.remainingSeconds}"
+                        // v26: 用 fromId+requestTime 去重（remainingSeconds每秒变化不适合做ID）
+                        val requestId = "${response.request.fromId}_${response.request.requestTime}"
                         if (requestId == lastNotifiedRequestId) {
                             // 重复请求，跳过
                         } else {
@@ -423,12 +427,26 @@ object RemoteAssistManager {
      * 尝试直接打开当前 App 的无障碍详情页，失败则打开通用列表
      */
     fun openAccessibilitySettings(context: Context): Intent {
-        // ⚠️ MIUI 闪退根因：
-        // 1. detailIntent (ACCESSIBILITY_DETAILS_SETTINGS) 携带 extra.COMPONENT_NAME,
-        //    部分 MIUI 版本 resolveActivity 通过但 startActivity 时内部崩溃
-        // 2. 某些 MIUI 走方案2的 ACTION_ACCESSIBILITY_SETTINGS 也崩溃
-        // ✅ 最安全方案：只用 ACTION_ACCESSIBILITY_SETTINGS，
-        //    不带任何 extra，只做简单 launch
+        // v24: 优先尝试直接跳到跌倒宝的详情页（HyperOS/MIUI 部分版本支持）
+        // 如果详情页 Intent 不可解析，fallback 到通用列表
+        val component = ComponentName(
+            context,
+            com.falldetector.diedaobao.assist.RemoteAssistService::class.java
+        )
+        // ACTION_ACCESSIBILITY_DETAILS_SETTINGS 和 EXTRA_ACCESSIBILITY_COMPONENT_NAME
+        // 是 API 24+ 的隐藏常量，需用字符串硬编码
+        val detailIntent = Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS")
+        detailIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        detailIntent.putExtra("android.provider.extra.ACCESSIBILITY_COMPONENT_NAME", component.flattenToString())
+
+        // 先检查能否解析
+        if (detailIntent.resolveActivity(context.packageManager) != null) {
+            Log.i(TAG, "openAccessibilitySettings: 详情页Intent可解析，使用详情页")
+            return detailIntent
+        }
+
+        // Fallback: 通用无障碍列表页
+        Log.i(TAG, "openAccessibilitySettings: 详情页不可用，fallback到通用列表")
         return android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
     }
 

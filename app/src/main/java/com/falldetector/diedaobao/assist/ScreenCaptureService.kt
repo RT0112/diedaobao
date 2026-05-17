@@ -54,7 +54,7 @@ class ScreenCaptureService : Service() {
         const val EXTRA_ELDER_ID = "elder_id"
         const val EXTRA_GUARDIAN_ID = "guardian_id"
 
-        private const val BASE_URL = "https://scheduling-researchers-discuss-compatible.trycloudflare.com"
+        private const val BASE_URL = "http://192.168.4.19:3000"
 
         // MIUI/HyperOS 兼容：用绑定方式而非前台服务
         var isRunning = false
@@ -67,9 +67,9 @@ class ScreenCaptureService : Service() {
             private set
         private const val SIGNAL_URL = "$BASE_URL/remote-assist"
 
-        // 帧率控制：目标 3fps（老人机保守，减少网络压力）
-        private const val TARGET_FPS = 1  // 降低帧率节省服务器资源
-        private const val FRAME_INTERVAL_MS = (1000L / TARGET_FPS) // 1000ms
+        // v26: 帧率提升至3fps，改善子女端延迟体验
+        private const val TARGET_FPS = 3  // 3fps，平衡流畅度和网络压力
+        private const val FRAME_INTERVAL_MS = (1000L / TARGET_FPS) // 333ms
 
         // 最大上传延迟（超过就丢帧）
         private const val MAX_UPLOAD_TIME_MS = 2000L
@@ -744,6 +744,7 @@ class ScreenCaptureService : Service() {
     private fun notifyScreenReady() {
         try {
             thread(name = "NotifyReady") {
+                try {
                 val url = URL(SIGNAL_URL)
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
@@ -759,8 +760,11 @@ class ScreenCaptureService : Service() {
                     put("height", screenHeight)
                 }
                 conn.outputStream.write(body.toString().toByteArray(Charsets.UTF_8))
-                val resp = conn.inputStream.bufferedReader().readText()
-                Log.i(TAG, "screen_ready: resp=$resp")
+                    val resp = conn.inputStream.bufferedReader().readText()
+                    Log.i(TAG, "screen_ready: resp=$resp")
+                } catch (e: Exception) {
+                    Log.e(TAG, "screen_ready网络请求异常: ${e.message}")
+                }
             }
         } catch (e: Exception) {
             AppLogger.e(TAG, "screen_ready异常: ${e.message}")

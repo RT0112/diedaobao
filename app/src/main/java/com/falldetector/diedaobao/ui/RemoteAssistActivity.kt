@@ -93,6 +93,7 @@ class RemoteAssistActivity : AppCompatActivity() {
     // Service binding
     private var captureService: ScreenCaptureService? = null
     private var serviceBound = false
+    private var waitingForMediaProjection = false  // v26: 标记正在等待MediaProjection授权
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             Log.i(TAG, "onServiceConnected 被调用")
@@ -136,12 +137,33 @@ class RemoteAssistActivity : AppCompatActivity() {
             setContentView(R.layout.activity_remote_assist)
 
             val isNewRequest = handleNewRequest(intent)
+            // v23: 即使是重复请求，也要初始化UI，否则按钮无响应
+            initViews()
             if (!isNewRequest) {
-                // 重复请求，不重新走授权流程
-                Log.i(TAG, "onCreate: 重复请求，跳过")
+                // v26: 重复请求，检查autoAllow决定行为
+                Log.i(TAG, "onCreate: 重复请求，显示现有状态")
+                if (isAssisting) {
+                    showAssisting()
+                } else if (serviceBound || pendingResultCode != Int.MIN_VALUE) {
+                    // 已经在权限流程中（MediaProjection已请求/Service已绑定）
+                    Log.i(TAG, "onCreate: 权限流程进行中，不重复操作")
+                } else {
+                    // 未在协助中且未在权限流程中
+                    val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+                    val autoAllow = prefs.getBoolean("auto_allow_assist", true)
+                    if (autoAllow) {
+                        // 自动允许 → 直接走允许流程
+                        Log.i(TAG, "onCreate: 重复请求但autoAllow=true，自动允许")
+                        tvRequestFrom.text = "$requestFromName 请求协助操作您的手机"
+                        containerRequest.visibility = View.VISIBLE
+                        onAllowClicked()
+                    } else {
+                        showRequestDialog()
+                        startAutoRejectCountdown()
+                    }
+                }
                 return
             }
-            initViews()
 
             // v18.2: 检查是否自动允许协助
             val prefs = getSharedPreferences("settings", MODE_PRIVATE)
@@ -149,6 +171,8 @@ class RemoteAssistActivity : AppCompatActivity() {
             if (autoAllow) {
                 // 自动允许 → 直接走允许流程，不弹请求对话框
                 tvRequestFrom.text = "$requestFromName 请求协助操作您的手机"
+                // v23: 确保 UI 初始化完成后再调用，避免异步问题
+                containerRequest.visibility = View.VISIBLE
                 onAllowClicked()
             } else {
                 showRequestDialog()
@@ -173,8 +197,28 @@ class RemoteAssistActivity : AppCompatActivity() {
         try {
             setIntent(intent)
             val isNewRequest = handleNewRequest(intent)
+            // v23: 即使是重复请求，也要初始化UI，否则按钮无响应
+            initViews()
             if (!isNewRequest) {
-                Log.i(TAG, "onNewIntent: 重复请求，跳过")
+                // v26: 重复请求，检查autoAllow决定行为
+                Log.i(TAG, "onNewIntent: 重复请求，显示现有状态")
+                if (isAssisting) {
+                    showAssisting()
+                } else if (serviceBound || pendingResultCode != Int.MIN_VALUE) {
+                    Log.i(TAG, "onNewIntent: 权限流程进行中，不重复操作")
+                } else {
+                    val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+                    val autoAllow = prefs.getBoolean("auto_allow_assist", true)
+                    if (autoAllow) {
+                        Log.i(TAG, "onNewIntent: 重复请求但autoAllow=true，自动允许")
+                        tvRequestFrom.text = "$requestFromName 请求协助操作您的手机"
+                        containerRequest.visibility = View.VISIBLE
+                        onAllowClicked()
+                    } else {
+                        showRequestDialog()
+                        startAutoRejectCountdown()
+                    }
+                }
                 return
             }
 
@@ -182,6 +226,8 @@ class RemoteAssistActivity : AppCompatActivity() {
             val autoAllow = prefs.getBoolean("auto_allow_assist", true)
             if (autoAllow) {
                 tvRequestFrom.text = "$requestFromName 请求协助操作您的手机"
+                // v23: 确保 UI 初始化完成后再调用，避免异步问题
+                containerRequest.visibility = View.VISIBLE
                 onAllowClicked()
             } else {
                 showRequestDialog()
@@ -255,25 +301,32 @@ class RemoteAssistActivity : AppCompatActivity() {
         rejectRunnable?.let { handler.removeCallbacks(it) }
         permissionCheckRunnable?.let { handler.removeCallbacks(it) }
         isWaitingForPermission = false
-        // v19.7.3: 确保 cleanupAssist 被调，防止闪退后脏状态
-        if (isAssisting) {
+        // v26: 如果正在协助中，不要清理Service——让ScreenCaptureService继续运行
+        // Activity被关不代表协助结束（可能被系统回收或用户误触返回）
+        // 只有在非协助状态（如拒绝、超时）才清理
+        if (!isAssisting) {
+            // 不在协助中，不需要保留Service
             cleanupAssist()
+        } else {
+            Log.i(TAG, "onDestroy: 正在协助中，保留ScreenCaptureService继续运行")
+            // 只解绑，不停Service
+            if (serviceBound) {
+                try { unbindService(serviceConnection) } catch (_: Exception) {}
+                serviceBound = false
+            }
         }
         // 注销自动授权广播接收器
         autoPermissionReceiver?.let {
             try { unregisterReceiver(it) } catch (_: Exception) {}
             autoPermissionReceiver = null
         }
-        // 停止信号轮询
+        // 停止信号轮询（但Service可能还在用WS收信号）
         RemoteAssistManager.stopSignalPolling()
         if (serviceBound) {
             try { unbindService(serviceConnection) } catch (_: Exception) {}
             serviceBound = false
         }
         // 注意：不再在 onDestroy 中发送 respondToRequest(false)
-        // 之前这里会在 !isAssisting 时发拒绝，但协程异步执行时可能
-        // 恰好拦截到下一个请求并错误拒绝它
-        // 改由云端超时机制处理：请求超过 remainingSeconds 自动过期
         super.onDestroy()
     }
 
@@ -339,6 +392,11 @@ class RemoteAssistActivity : AppCompatActivity() {
     // ==================== 操作 ====================
 
     private fun onAllowClicked() {
+        // v26: 重入保护 — 正在等待MediaProjection授权时，忽略重复调用
+        if (waitingForMediaProjection) {
+            Log.w(TAG, "onAllowClicked: waitingForMediaProjection=true, 忽略重复调用")
+            return
+        }
         // 取消自动拒绝
         rejectRunnable?.let { handler.removeCallbacks(it) }
 
@@ -360,13 +418,18 @@ class RemoteAssistActivity : AppCompatActivity() {
             runOnUiThread {
                 if (result.success) {
                     guardianId = result.guardianId
-                    // 用 intent 传来的 requestFromId（老人自己的 userId）
-                    // ⚠️ 不能用 getUserId()——family binding 会把 guardian 的 ID 写入 SharedPreferences，
-                    //    导致 ScreenCaptureService 上传帧到错误的文档，子女端永远拉不到帧
                     startPermissionFlow()
                 } else {
-                    Toast.makeText(this@RemoteAssistActivity, result.message, Toast.LENGTH_LONG).show()
-                    finish()
+                    // v26: respondToRequest 失败时的容错处理
+                    // 场景1: 已在协助中（重复请求/WS双推）→ 忽略，继续当前流程
+                    // 场景2: 确实失败（如请求已过期）→ 提示用户
+                    if (isAssisting || serviceBound || waitingForMediaProjection) {
+                        // 已经在协助中或正在等待MediaProjection授权，忽略重复响应
+                        Log.i(TAG, "respondToRequest失败但已在协助流程中，忽略")
+                    } else {
+                        Toast.makeText(this@RemoteAssistActivity, "连接异常，请重试", Toast.LENGTH_LONG).show()
+                        finish()
+                    }
                 }
             }
         }
@@ -389,6 +452,7 @@ class RemoteAssistActivity : AppCompatActivity() {
      * - showLoading() → requestMediaProjection() 后立即 tryAutoHandle()
      */
     private fun startPermissionFlow() {
+        waitingForMediaProjection = true  // v26
         // v18.1: 开始前重置 mp_granted，防止上次残留 true 导致误判
         getSharedPreferences("cloudbase", MODE_PRIVATE)
             .edit().putBoolean("mp_granted", false).apply()
@@ -487,6 +551,7 @@ class RemoteAssistActivity : AppCompatActivity() {
     private fun cleanupAssist() {
         Log.i(TAG, "cleanupAssist: isAssisting=$isAssisting, serviceBound=$serviceBound")
         isAssisting = false
+        waitingForMediaProjection = false  // v26: 重置标志
 
         // v19: 重置 mp_granted，防止下次误判（上次残留 true 会导致回放逻辑认为权限已授权）
         getSharedPreferences("cloudbase", MODE_PRIVATE)
@@ -553,12 +618,23 @@ class RemoteAssistActivity : AppCompatActivity() {
                     try {
                         startActivity(intent)
                     } catch (e: Exception) {
-                        Toast.makeText(this@RemoteAssistActivity,
-                            "无法打开设置，请手动在系统设置中开启", Toast.LENGTH_LONG).show()
+                        // v24: 详情页在 MIUI 上可能闪退，fallback 到通用无障碍列表
+                        Log.w(TAG, "详情页startActivity失败，fallback到通用列表", e)
+                        try {
+                            startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        } catch (e2: Exception) {
+                            Toast.makeText(this@RemoteAssistActivity,
+                                "无法打开设置，请手动在系统设置中开启", Toast.LENGTH_LONG).show()
+                        }
                     }
                 } else {
-                    Toast.makeText(this@RemoteAssistActivity,
-                        "系统不支持此功能，请联系家人协助", Toast.LENGTH_LONG).show()
+                    // resolveActivity 失败，直接用通用列表
+                    try {
+                        startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    } catch (e: Exception) {
+                        Toast.makeText(this@RemoteAssistActivity,
+                            "系统不支持此功能，请联系家人协助", Toast.LENGTH_LONG).show()
+                    }
                 }
                 Toast.makeText(this@RemoteAssistActivity,
                     "找到「跌倒宝」→ 打开开关 → 返回此页面", Toast.LENGTH_LONG).show()
@@ -679,6 +755,7 @@ class RemoteAssistActivity : AppCompatActivity() {
         when (requestCode) {
             REQUEST_MEDIA_PROJECTION -> {
                 if (resultCode == Activity.RESULT_OK && data != null) {
+                    waitingForMediaProjection = false  // v26: 授权结果已收到，重置标志
                     // v17: 延迟停止录制，给 TouchRecordOverlay 时间完成回调
                     // 之前立即 stopMpRecording() 会导致 overlay 回调还没执行完就被停止
                     Handler(Looper.getMainLooper()).postDelayed({
@@ -701,6 +778,7 @@ class RemoteAssistActivity : AppCompatActivity() {
                     startScreenCapture(resultCode, data)
                 } else {
                     // 用户拒绝屏幕录制权限
+                    waitingForMediaProjection = false  // v26
                     // 停止录制
                     RemoteAssistService.instance?.stopMpRecording()
                     isWaitingForPermission = false
