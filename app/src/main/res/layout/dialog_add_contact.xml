@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <EditText
+        android:id="@+id/et_contact_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="姓名"
+        android:textSize="22sp"
+        android:inputType="textPersonName" />
+
+    <EditText
+        android:id="@+id/et_contact_phone"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:hint="电话号码"
+        android:textSize="22sp"
+        android:inputType="phone" />
+
+    <EditText
+        android:id="@+id/et_contact_relation"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:hint="关系（如：女儿）"
+        android:textSize="22sp" />
+
+</LinearLayout>

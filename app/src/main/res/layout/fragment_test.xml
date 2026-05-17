@@ -1,0 +1,381 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <!-- ══ 服务状态行 ══════════════════════════════════════ -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/tv_service_status"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="服务状态：检测中..."
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tv_ml_stats"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ML: 0次 跌倒: 0次"
+                android:textSize="12sp"
+                android:textColor="#888888" />
+        </LinearLayout>
+
+        <!-- ══ 当前参数配置行 ═══════════════════════════════════ -->
+        <TextView
+            android:id="@+id/tv_config_summary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="dyn&gt;0.6g | ML高=0.50 ML低=0.35 | ff&gt;150ms q&gt;0.15 v&gt;2.0 imp&gt;2.5g | wait=300ms"
+            android:textSize="11sp"
+            android:textColor="#555555"
+            android:fontFamily="monospace" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="8dp"
+            android:background="#DDDDDD" />
+
+        <!-- ══ 实时决策状态面板 ════════════════════════════════ -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🔍 决策状态"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <!-- 状态行1 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="4dp">
+
+            <TextView android:id="@+id/tv_s1" android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:text="①冲击❓" android:textSize="12sp" android:fontFamily="monospace" />
+            <TextView android:id="@+id/tv_s2" android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:text="②窗口❓" android:textSize="12sp" android:fontFamily="monospace" />
+            <TextView android:id="@+id/tv_s3" android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:text="③ML=❓" android:textSize="12sp" android:fontFamily="monospace" />
+        </LinearLayout>
+
+        <!-- 状态行2 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="2dp">
+
+            <TextView android:id="@+id/tv_s4" android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:text="④高阈值❓" android:textSize="12sp" android:fontFamily="monospace" />
+            <TextView android:id="@+id/tv_s5" android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:text="⑤低阈值❓" android:textSize="12sp" android:fontFamily="monospace" />
+            <TextView android:id="@+id/tv_s7" android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:text="⑦结果❓" android:textSize="12sp" android:fontFamily="monospace" />
+        </LinearLayout>
+
+        <!-- 物理规则行 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="2dp">
+
+            <TextView android:id="@+id/tv_s6ff" android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:text="ff时间❓" android:textSize="11sp" android:fontFamily="monospace" />
+            <TextView android:id="@+id/tv_s6q"  android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:text="Q质量❓" android:textSize="11sp" android:fontFamily="monospace" />
+            <TextView android:id="@+id/tv_s6v"  android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:text="V速度❓" android:textSize="11sp" android:fontFamily="monospace" />
+            <TextView android:id="@+id/tv_s6imp" android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:text="Imp冲击❓" android:textSize="11sp" android:fontFamily="monospace" />
+        </LinearLayout>
+
+        <!-- 当前数值面板 -->
+        <TextView
+            android:id="@+id/tv_current_values"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="dyn=0.00g mag=1.00g 窗口=0 失重=0ms v=0.0m/s"
+            android:textSize="11sp"
+            android:textColor="#666666"
+            android:fontFamily="monospace"
+            android:background="#F5F5F5"
+            android:padding="4dp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="4dp"
+            android:background="#DDDDDD" />
+
+        <!-- ══ 配置面板标题 ═══════════════════════════════════ -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⚙️ 参数配置（滑动调节，立即生效）"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <!-- ①冲击阈值 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="①冲击阈值 dyn &gt; X g"
+            android:textSize="12sp" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+            <com.google.android.material.slider.Slider
+                android:id="@+id/slider_acc"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:valueFrom="0.3" android:valueTo="2.0" android:stepSize="0.05"
+                android:value="0.6" />
+            <TextView android:id="@+id/tv_val_acc" android:layout_width="48dp" android:layout_height="wrap_content"
+                android:text="0.60g" android:textSize="12sp" android:textStyle="bold" android:gravity="end" />
+        </LinearLayout>
+
+        <!-- ②ML高阈值 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="④ML高阈值（≥X 直接报警）"
+            android:textSize="12sp" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+            <com.google.android.material.slider.Slider
+                android:id="@+id/slider_ml_high"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:valueFrom="0.10" android:valueTo="0.90" android:stepSize="0.05"
+                android:value="0.50" />
+            <TextView android:id="@+id/tv_val_ml_high" android:layout_width="48dp" android:layout_height="wrap_content"
+                android:text="0.50" android:textSize="12sp" android:textStyle="bold" android:gravity="end" />
+        </LinearLayout>
+
+        <!-- ③ML低阈值 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⑤ML低阈值（≥X + 物理全过才报警）"
+            android:textSize="12sp" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+            <com.google.android.material.slider.Slider
+                android:id="@+id/slider_ml_low"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:valueFrom="0.05" android:valueTo="0.90" android:stepSize="0.05"
+                android:value="0.35" />
+            <TextView android:id="@+id/tv_val_ml_low" android:layout_width="48dp" android:layout_height="wrap_content"
+                android:text="0.35" android:textSize="12sp" android:textStyle="bold" android:gravity="end" />
+        </LinearLayout>
+
+        <!-- ④失重时间 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⑥失重时间 &gt; X ms"
+            android:textSize="12sp" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+            <com.google.android.material.slider.Slider
+                android:id="@+id/slider_ff_time"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:valueFrom="0" android:valueTo="500" android:stepSize="25"
+                android:value="150" />
+            <TextView android:id="@+id/tv_val_ff_time" android:layout_width="56dp" android:layout_height="wrap_content"
+                android:text="150ms" android:textSize="12sp" android:textStyle="bold" android:gravity="end" />
+        </LinearLayout>
+
+        <!-- ⑤失重质量 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⑥失重质量 &gt; X g（1 - 失重期平均加速度）"
+            android:textSize="12sp" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+            <com.google.android.material.slider.Slider
+                android:id="@+id/slider_ff_quality"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:valueFrom="0.05" android:valueTo="0.80" android:stepSize="0.05"
+                android:value="0.15" />
+            <TextView android:id="@+id/tv_val_ff_quality" android:layout_width="56dp" android:layout_height="wrap_content"
+                android:text="0.15g" android:textSize="12sp" android:textStyle="bold" android:gravity="end" />
+        </LinearLayout>
+
+        <!-- ⑥速度 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⑥速度 &gt; X m/s（失重时间换算）"
+            android:textSize="12sp" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+            <com.google.android.material.slider.Slider
+                android:id="@+id/slider_velocity"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:valueFrom="0.5" android:valueTo="5.0" android:stepSize="0.25"
+                android:value="2.0" />
+            <TextView android:id="@+id/tv_val_velocity" android:layout_width="56dp" android:layout_height="wrap_content"
+                android:text="2.0m/s" android:textSize="12sp" android:textStyle="bold" android:gravity="end" />
+        </LinearLayout>
+
+        <!-- ⑦冲击峰值 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⑥冲击峰值 &gt; X g（越高越排除非跌倒动作）"
+            android:textSize="12sp" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+            <com.google.android.material.slider.Slider
+                android:id="@+id/slider_impact"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:valueFrom="0.8" android:valueTo="5.0" android:stepSize="0.10"
+                android:value="2.5" />
+            <TextView android:id="@+id/tv_val_impact" android:layout_width="56dp" android:layout_height="wrap_content"
+                android:text="2.5g" android:textSize="12sp" android:textStyle="bold" android:gravity="end" />
+        </LinearLayout>
+
+        <!-- ⑧等待时间 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="等待窗口填充时间（ms）"
+            android:textSize="12sp" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+            <com.google.android.material.slider.Slider
+                android:id="@+id/slider_wait"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:valueFrom="100" android:valueTo="1000" android:stepSize="50"
+                android:value="300" />
+            <TextView android:id="@+id/tv_val_wait" android:layout_width="56dp" android:layout_height="wrap_content"
+                android:text="300ms" android:textSize="12sp" android:textStyle="bold" android:gravity="end" />
+        </LinearLayout>
+
+        <!-- 重置按钮 -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_reset_config"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:layout_marginTop="4dp"
+            android:text="🔄 重置为默认"
+            android:textSize="12sp"
+            style="@style/Widget.Material3.Button.OutlinedButton" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="10dp"
+            android:layout_marginBottom="8dp"
+            android:background="#DDDDDD" />
+
+        <!-- ══ 操作按钮 ═══════════════════════════════════════ -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_simulate_fall"
+                android:layout_width="0dp"
+                android:layout_height="54dp"
+                android:layout_weight="1"
+                android:text="🧪 模拟跌倒"
+                android:textSize="16sp"
+                android:backgroundTint="#FF9800" />
+
+            <View android:layout_width="6dp" android:layout_height="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_test_notify"
+                android:layout_width="0dp"
+                android:layout_height="54dp"
+                android:layout_weight="1"
+                android:text="📢 测试通知"
+                android:textSize="16sp"
+                android:backgroundTint="#2196F3" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="6dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_copy_log"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_weight="1"
+                android:text="📋 复制日志"
+                android:textSize="13sp"
+                style="@style/Widget.Material3.Button.TonalButton" />
+
+            <View android:layout_width="6dp" android:layout_height="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_clear_log"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_weight="1"
+                android:text="🗑️ 清空日志"
+                android:textSize="13sp"
+                style="@style/Widget.Material3.Button.TonalButton" />
+        </LinearLayout>
+
+        <!-- ══ 日志窗口 ════════════════════════════════════════ -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="📋 诊断日志（长按复制粘贴给我）"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/tv_log"
+            android:layout_width="match_parent"
+            android:layout_height="400dp"
+            android:layout_marginTop="4dp"
+            android:background="@android:drawable/edit_text"
+            android:editable="false"
+            android:focusable="false"
+            android:gravity="top|start"
+            android:textSize="11sp"
+            android:fontFamily="monospace"
+            android:scrollbars="vertical"
+            android:textIsSelectable="true"
+            android:inputType="none"
+            android:text="" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="💡 滑到最底部查看最新日志，每次动作后记录完整决策链"
+            android:textSize="11sp"
+            android:textColor="#888888" />
+
+    </LinearLayout>
+</ScrollView>

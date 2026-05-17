@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- 允许localhost HTTP连接（K70本地服务器） -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+        <domain includeSubdomains="true">10.0.0.0</domain>
+        <domain includeSubdomains="true">192.168.0.0</domain>
+    </domain-config>
+    <!-- 允许Cloudflare Tunnel内网穿透域名 -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">trycloudflare.com</domain>
+    </domain-config>
+</network-security-config>

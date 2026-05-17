@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#F5F5F5"
+    android:padding="24dp">
+
+    <!-- 请求页面 -->
+    <FrameLayout
+        android:id="@+id/container_request"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="visible">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@android:color/white"
+            android:elevation="4dp"
+            android:padding="32dp">
+
+            <ImageView
+                android:layout_width="80dp"
+                android:layout_height="80dp"
+                android:src="@android:drawable/ic_menu_share"
+                android:contentDescription="远程协助"
+                android:tint="#4CAF50" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="🔗 远程协助请求"
+                android:textSize="22sp"
+                android:textColor="#212121"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tv_request_from"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="家属请求协助操作您的手机"
+                android:textSize="16sp"
+                android:textColor="#757575"
+                android:gravity="center" />
+
+            <TextView
+                android:id="@+id/tv_remaining"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="30秒后自动拒绝"
+                android:textSize="14sp"
+                android:textColor="#FF5722" />
+
+            <Button
+                android:id="@+id/btn_allow"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:layout_marginTop="32dp"
+                android:text="✓ 允许"
+                android:textSize="18sp"
+                android:textColor="@android:color/white"
+                android:backgroundTint="#4CAF50" />
+
+            <Button
+                android:id="@+id/btn_reject"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="8dp"
+                android:text="✗ 拒绝"
+                android:textSize="16sp"
+                android:textColor="#757575" />
+
+        </LinearLayout>
+    </FrameLayout>
+
+    <!-- 加载/录制中页面 -->
+    <FrameLayout
+        android:id="@+id/container_loading"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <ProgressBar
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_gravity="center" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="📱 正在获取屏幕共享权限..."
+                android:textSize="16sp"
+                android:textColor="#757575"
+                android:gravity="center" />
+
+            <TextView
+                android:id="@+id/tv_recording_hint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="请手动操作弹窗，完成后点击下方按钮"
+                android:textSize="13sp"
+                android:textColor="#9E9E9E"
+                android:gravity="center" />
+
+            <Button
+                android:id="@+id/btn_finish_recording"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:paddingHorizontal="32dp"
+                android:text="✅ 完成录制"
+                android:textSize="16sp"
+                android:textColor="@android:color/white"
+                android:backgroundTint="#4CAF50" />
+
+            <Button
+                android:id="@+id/btn_cancel_recording"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="✗ 取消"
+                android:textSize="14sp"
+                android:textColor="#9E9E9E" />
+
+        </LinearLayout>
+    </FrameLayout>
+
+    <!-- 协助中页面 -->
+    <FrameLayout
+        android:id="@+id/container_assisting"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone">
+
+        <!-- 顶部红色结束按钮 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="end"
+            android:padding="8dp">
+
+            <Button
+                android:id="@+id/btn_end_assist"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="结束协助"
+                android:textColor="@android:color/white"
+                android:textSize="14sp"
+                android:backgroundTint="#F44336" />
+        </LinearLayout>
+
+        <!-- 提示内容 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="24dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="📱"
+                android:textSize="64sp" />
+
+            <TextView
+                android:id="@+id/tv_assist_status"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="家属正在远程操作您的手机"
+                android:textSize="18sp"
+                android:textColor="#212121"
+                android:gravity="center" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="您不需要任何操作\n家属会帮您完成"
+                android:textSize="14sp"
+                android:textColor="#9E9E9E"
+                android:gravity="center" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="32dp"
+                android:text="⚠️ 点击顶部红色按钮可随时结束"
+                android:textSize="13sp"
+                android:textColor="#FF5722" />
+        </LinearLayout>
+    </FrameLayout>
+
+</LinearLayout>

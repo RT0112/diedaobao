@@ -1,0 +1,3 @@
+<resources>
+    <string name="accessibility_service_description">跌倒宝远程协助辅助服务：用于接收并执行家属端的远程操作指令（点击、滑动等），仅用于远程协助场景。</string>
+</resources>

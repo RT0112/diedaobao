@@ -5,6 +5,8 @@ build/
 *.apk
 *.ap_
 *.dex
+*.aab
+local.properties
 
 # IDE
 .idea/

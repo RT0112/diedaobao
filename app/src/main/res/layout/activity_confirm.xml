@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/confirm_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center_horizontal"
+    android:background="#B71C1C"
+    android:paddingTop="32dp"
+    android:paddingLeft="24dp"
+    android:paddingRight="24dp"
+    android:paddingBottom="16dp">
+
+    <!-- 顶部告警图标 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="⚠️"
+        android:textSize="56sp"
+        android:gravity="center" />
+
+    <!-- 标题 -->
+    <TextView
+        android:id="@+id/tv_confirm_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="检测到您可能跌倒了！"
+        android:textSize="28sp"
+        android:textColor="@android:color/white"
+        android:textStyle="bold"
+        android:gravity="center" />
+
+    <!-- 详情信息 -->
+    <TextView
+        android:id="@+id/tv_confirm_info"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:textSize="18sp"
+        android:textColor="#FFCDD2"
+        android:gravity="center" />
+
+    <!-- 倒计时显示 -->
+    <TextView
+        android:id="@+id/tv_countdown"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="倒计时：30秒"
+        android:textSize="24sp"
+        android:textColor="@android:color/white"
+        android:textStyle="bold"
+        android:gravity="center" />
+
+    <!-- 进度条 -->
+    <ProgressBar
+        android:id="@+id/progress_countdown"
+        style="@style/Widget.AppCompat.ProgressBar.Horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="12dp"
+        android:layout_marginTop="12dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:max="30"
+        android:progress="30"
+        android:progressTint="@android:color/white"
+        android:progressBackgroundTint="#EF9A9A" />
+
+    <!-- 提示文字 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="如果您没事，请点击下方按钮取消报警"
+        android:textSize="16sp"
+        android:textColor="#FFCDD2"
+        android:gravity="center" />
+
+    <!-- 弹性空间，把按钮推到底部 -->
+    <View
+        android:layout_width="1dp"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <!-- 按钮区域 - 固定在底部 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <!-- 主要按钮：我没事 -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_i_am_ok"
+            android:layout_width="match_parent"
+            android:layout_height="64dp"
+            android:text="✅  我没事"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:backgroundTint="#4CAF50"
+            android:textColor="@android:color/white" />
+
+        <!-- 次要按钮：需要帮助 -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_need_help"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="12dp"
+            android:text="🆘  需要帮助"
+            android:textSize="20sp"
+            android:textColor="@android:color/white"
+            android:strokeColor="@android:color/white"
+            android:strokeWidth="2" />
+
+    </LinearLayout>
+
+    <!-- 底部提示 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="紧急联系人将收到您的位置信息"
+        android:textSize="12sp"
+        android:textColor="#EF9A9A"
+        android:gravity="center" />
+
+</LinearLayout>

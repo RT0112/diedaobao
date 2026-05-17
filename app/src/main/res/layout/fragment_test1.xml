@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- 服务状态 -->
+        <TextView
+            android:id="@+id/tv_service_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="服务状态：检测中..."
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="12dp"
+            android:background="#DDDDDD" />
+
+        <!-- 当前数值 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="📊 传感器实时数值"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tv_current_values"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="dyn=0.00g | mag=1.00g | 失重=0ms"
+            android:textSize="13sp"
+            android:fontFamily="monospace"
+            android:background="#F5F5F5"
+            android:padding="8dp" />
+
+        <!-- 决策状态 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="🔍 决策状态"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tv_decision_state"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="状态：监测中 | ML：未推理 | 结果：—"
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            android:background="#F5F5F5"
+            android:padding="8dp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="12dp"
+            android:background="#DDDDDD" />
+
+        <!-- 操作按钮 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🧪 操作"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="8dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_simulate_fall"
+                android:layout_width="0dp"
+                android:layout_height="54dp"
+                android:layout_weight="1"
+                android:text="🧪 模拟跌倒"
+                android:textSize="16sp"
+                android:backgroundTint="#FF9800" />
+
+            <View android:layout_width="8dp" android:layout_height="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_test_notify"
+                android:layout_width="0dp"
+                android:layout_height="54dp"
+                android:layout_weight="1"
+                android:text="📢 测试通知"
+                android:textSize="16sp"
+                android:backgroundTint="#2196F3" />
+        </LinearLayout>
+        
+        <!-- 标注误报按钮 -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_mark_false_positive"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="8dp"
+            android:text="📝 标注上一次跌倒为误报"
+            android:textSize="14sp"
+            style="@style/Widget.Material3.Button.TonalButton" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="12dp"
+            android:background="#DDDDDD" />
+
+        <!-- 日志窗口 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="📋 诊断日志（可过滤/复制）"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+        
+        <!-- 日志过滤 RadioGroup -->
+        <RadioGroup
+            android:id="@+id/radio_group_filter"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="6dp">
+            <RadioButton
+                android:id="@+id/rb_all"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="全部"
+                android:checked="true" />
+            <RadioButton
+                android:id="@+id/rb_error"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="错误" />
+            <RadioButton
+                android:id="@+id/rb_fall"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="跌倒" />
+            <RadioButton
+                android:id="@+id/rb_normal"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="正常" />
+        </RadioGroup>
+
+        <EditText
+            android:id="@+id/tv_log"
+            android:layout_width="match_parent"
+            android:layout_height="350dp"
+            android:layout_marginTop="6dp"
+            android:background="@android:drawable/edit_text"
+            android:editable="false"
+            android:focusable="false"
+            android:gravity="top|start"
+            android:textSize="11sp"
+            android:fontFamily="monospace"
+            android:scrollbars="vertical"
+            android:textIsSelectable="true"
+            android:inputType="none"
+            android:text="" />
+
+        <!-- 日志按钮 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="6dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_copy_log"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_weight="1"
+                android:text="📋 复制日志"
+                android:textSize="13sp"
+                style="@style/Widget.Material3.Button.TonalButton" />
+
+            <View android:layout_width="8dp" android:layout_height="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_clear_log"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_weight="1"
+                android:text="🗑️ 清空日志"
+                android:textSize="13sp"
+                style="@style/Widget.Material3.Button.TonalButton" />
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>
