@@ -1,0 +1,33 @@
+# Android build
+build/
+*/build/
+.gradle/
+*.apk
+*.ap_
+*.dex
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+nohup.out
+
+# QClaw runtime
+.openclaw/
+
+# Node
+node_modules/
+npm-debug.log
+
+# Temporary
+*.tmp
+/tmp/

@@ -1,0 +1,1222 @@
+# 2026-05-10 Daily Memory
+
+## 00:02 RemoteAssistService 录制流程修复
+
+### Bug: TouchRecordOverlay 未激活导致录制为空
+- **根因**: 用户点"好的，开始"后直接调 `requestMediaProjection()` 弹系统弹窗，但没有先启动 MediaProjection 录制。TouchRecordOverlay 没激活，弹窗上用户的触摸操作完全没被拦截录制。
+- **修复**: 在 `requestMediaProjection()` 之前先调 `RemoteAssistService.instance?.startMpRecording()`，激活 TouchRecordOverlay 拦截触摸坐标。
+
+### RemoteAssistService API 注意事项
+- `getInstance()` 是错误的调用方式，正确的是 `instance` 属性（Kotlin object 单例的 @JvmStatic companion 属性）
+- 用 `RemoteAssistService.instance?.xxx()` 而非 `RemoteAssistService.getInstance()?.xxx()`
+
+### 修复后的完整流程
+1. 点"允许" → 录制引导弹窗
+2. 点"好的，开始" → **先启动录制(Overlay激活)** → 再弹出 MediaProjection 系统弹窗
+3. 用户操作弹窗 → Overlay 拦截每次触摸坐标 → 录进 recordedSteps
+4. 授权成功 → `onActivityResult` → 保存录制
+# 2026-05-10 Daily Memory
+
+## 00:02 RemoteAssistService 录制流程修复
+
+### Bug: TouchRecordOverlay 未激活导致录制为空
+- **根因**: 用户点"好的，开始"后直接调 `requestMediaProjection()` 弹系统弹窗，但没有先启动 MediaProjection 录制。TouchRecordOverlay 没激活，弹窗上用户的触摸操作完全没被拦截录制。
+- **修复**: 在 `requestMediaProjection()` 之前先调 `RemoteAssistService.instance?.startMpRecording()`，激活 TouchRecordOverlay 拦截触摸坐标。
+
+### RemoteAssistService API 注意事项
+- `getInstance()` 是错误的调用方式，正确的是 `instance` 属性（Kotlin object 单例的 @JvmStatic companion 属性）
+- 用 `RemoteAssistService.instance?.xxx()` 而非 `RemoteAssistService.getInstance()?.xxx()`
+
+### 修复后的完整流程
+1. 点"允许" → 录制引导弹窗
+2. 点"好的，开始" → **先启动录制(Overlay激活)** → 再弹出 MediaProjection 系统弹窗
+3. 用户操作弹窗 → Overlay 拦截每次触摸坐标 → 录进 recordedSteps
+4. 授权成功 → `onActivityResult` → 保存录制
+
+## 00:07 自动回放触发 + 录制状态 Toast 提示
+
+### 3处改动
+
+**1. 恢复自动回放触发**（`RemoteAssistService.onAccessibilityEvent`）
+- 检测到 `TYPE_WINDOW_STATE_CHANGED` + 权限弹窗存在 + 有录制 + 未禁用 → 自动调 `tryAutoHandle()`
+
+**2. `startPermissionFlow()` 区分首次/回放**
+- **有录制** → 直接 `requestMediaProjection()`，不弹引导框，AccessibilityService 自动回放
+- **有录制但被禁用** → 提示"自动授权已禁用，请重新录制"，进录制流程
+- **无录制** → 正常录制引导
+
+**3. 录制状态 Toast 提示**
+- 录制开始："🎬 录制中..."
+- 录制成功："✅ 录制完成！共 X 步，下次自动完成"
+- 录制失败："⚠️ 未录制到操作，请重试"
+
+### 测试流程
+1. 先清除旧录制（设置页 → 清除录制）
+2. 子女端发请求 → 老人端点"允许" → 录制引导 → 手动操作弹窗 → 看到"✅ 录制完成"提示
+3. 第二次发请求 → 老人端点"允许" → 应该看到"🚀 自动授权中..." → 弹窗自动点击
+# 2026-05-10 Daily Memory
+
+## 00:02 RemoteAssistService 录制流程修复
+
+### Bug: TouchRecordOverlay 未激活导致录制为空
+- **根因**: 用户点"好的，开始"后直接调 `requestMediaProjection()` 弹系统弹窗，但没有先启动 MediaProjection 录制。TouchRecordOverlay 没激活，弹窗上用户的触摸操作完全没被拦截录制。
+- **修复**: 在 `requestMediaProjection()` 之前先调 `RemoteAssistService.instance?.startMpRecording()`，激活 TouchRecordOverlay 拦截触摸坐标。
+
+### RemoteAssistService API 注意事项
+- `getInstance()` 是错误的调用方式，正确的是 `instance` 属性（Kotlin object 单例的 @JvmStatic companion 属性）
+- 用 `RemoteAssistService.instance?.xxx()` 而非 `RemoteAssistService.getInstance()?.xxx()`
+
+### 修复后的完整流程
+1. 点"允许" → 录制引导弹窗
+2. 点"好的，开始" → **先启动录制(Overlay激活)** → 再弹出 MediaProjection 系统弹窗
+3. 用户操作弹窗 → Overlay 拦截每次触摸坐标 → 录进 recordedSteps
+4. 授权成功 → `onActivityResult` → 保存录制
+
+## 00:07 自动回放触发 + 录制状态 Toast 提示
+
+### 3处改动
+
+**1. 恢复自动回放触发**（`RemoteAssistService.onAccessibilityEvent`）
+- 检测到 `TYPE_WINDOW_STATE_CHANGED` + 权限弹窗存在 + 有录制 + 未禁用 → 自动调 `tryAutoHandle()`
+
+**2. `startPermissionFlow()` 区分首次/回放**
+- **有录制** → 直接 `requestMediaProjection()`，不弹引导框，AccessibilityService 自动回放
+- **有录制但被禁用** → 提示"自动授权已禁用，请重新录制"，进录制流程
+- **无录制** → 正常录制引导
+
+**3. 录制状态 Toast 提示**
+- 录制开始："🎬 录制中..."
+- 录制成功："✅ 录制完成！共 X 步，下次自动完成"
+- 录制失败："⚠️ 未录制到操作，请重试"
+
+### 测试流程
+1. 先清除旧录制（设置页 → 清除录制）
+2. 子女端发请求 → 老人端点"允许" → 录制引导 → 手动操作弹窗 → 看到"✅ 录制完成"提示
+3. 第二次发请求 → 老人端点"允许" → 应该看到"🚀 自动授权中..." → 弹窗自动点击
+
+## 00:14 录制永不结束 + Toast 不显示修复
+
+### Bug1: 录制永不结束，手机卡住
+- **根因**: 首次录制流程里，弹系统弹窗后没有显示 `showLoading()`（含"完成录制"按钮）。用户操作完弹窗直接进 `startScreenCapture()`，TouchRecordOverlay 一直没关，持续拦截所有触摸导致手机卡。
+- **修复**: 弹系统弹窗后立即调 `showLoading()`，让用户看到"完成录制"按钮
+- **兜底**: `onActivityResult` 成功/失败都先调 `stopMpRecording()` 关 Overlay
+
+### Bug2: Toast 不显示
+- **根因**: AccessibilityService 的回调不在主线程，`Toast.makeText().show()` 静默失败。
+- **修复**: 所有 Toast 包在 `handler.post { }` 里
+
+### 修复后测试流程
+1. 子女端发请求 → 老人端点"允许"
+2. 录制引导 → 点"好的，开始"
+3. 应该看到 Toast「🎬 录制中...」+ Loading 界面（带"完成录制"按钮）
+4. 手动操作弹窗授权
+5. 授权成功自动进协助界面（录制也会自动停止）
+# 2026-05-10 Daily Memory
+
+## 00:02 RemoteAssistService 录制流程修复
+
+### Bug: TouchRecordOverlay 未激活导致录制为空
+- **根因**: 用户点"好的，开始"后直接调 `requestMediaProjection()` 弹系统弹窗，但没有先启动 MediaProjection 录制。TouchRecordOverlay 没激活，弹窗上用户的触摸操作完全没被拦截录制。
+- **修复**: 在 `requestMediaProjection()` 之前先调 `RemoteAssistService.instance?.startMpRecording()`，激活 TouchRecordOverlay 拦截触摸坐标。
+
+### RemoteAssistService API 注意事项
+- `getInstance()` 是错误的调用方式，正确的是 `instance` 属性（Kotlin object 单例的 @JvmStatic companion 属性）
+- 用 `RemoteAssistService.instance?.xxx()` 而非 `RemoteAssistService.getInstance()?.xxx()`
+
+### 修复后的完整流程
+1. 点"允许" → 录制引导弹窗
+2. 点"好的，开始" → **先启动录制(Overlay激活)** → 再弹出 MediaProjection 系统弹窗
+3. 用户操作弹窗 → Overlay 拦截每次触摸坐标 → 录进 recordedSteps
+4. 授权成功 → `onActivityResult` → 保存录制
+
+## 00:07 自动回放触发 + 录制状态 Toast 提示
+
+### 3处改动
+
+**1. 恢复自动回放触发**（`RemoteAssistService.onAccessibilityEvent`）
+- 检测到 `TYPE_WINDOW_STATE_CHANGED` + 权限弹窗存在 + 有录制 + 未禁用 → 自动调 `tryAutoHandle()`
+
+**2. `startPermissionFlow()` 区分首次/回放**
+- **有录制** → 直接 `requestMediaProjection()`，不弹引导框，AccessibilityService 自动回放
+- **有录制但被禁用** → 提示"自动授权已禁用，请重新录制"，进录制流程
+- **无录制** → 正常录制引导
+
+**3. 录制状态 Toast 提示**
+- 录制开始："🎬 录制中..."
+- 录制成功："✅ 录制完成！共 X 步，下次自动完成"
+- 录制失败："⚠️ 未录制到操作，请重试"
+
+### 测试流程
+1. 先清除旧录制（设置页 → 清除录制）
+2. 子女端发请求 → 老人端点"允许" → 录制引导 → 手动操作弹窗 → 看到"✅ 录制完成"提示
+3. 第二次发请求 → 老人端点"允许" → 应该看到"🚀 自动授权中..." → 弹窗自动点击
+
+## 00:14 录制永不结束 + Toast 不显示修复
+
+### Bug1: 录制永不结束，手机卡住
+- **根因**: 首次录制流程里，弹系统弹窗后没有显示 `showLoading()`（含"完成录制"按钮）。用户操作完弹窗直接进 `startScreenCapture()`，TouchRecordOverlay 一直没关，持续拦截所有触摸导致手机卡。
+- **修复**: 弹系统弹窗后立即调 `showLoading()`，让用户看到"完成录制"按钮
+- **兜底**: `onActivityResult` 成功/失败都先调 `stopMpRecording()` 关 Overlay
+
+### Bug2: Toast 不显示
+- **根因**: AccessibilityService 的回调不在主线程，`Toast.makeText().show()` 静默失败。
+- **修复**: 所有 Toast 包在 `handler.post { }` 里
+
+### 修复后测试流程
+1. 子女端发请求 → 老人端点"允许"
+2. 录制引导 → 点"好的，开始"
+3. 应该看到 Toast「🎬 录制中...」+ Loading 界面（带"完成录制"按钮）
+4. 手动操作弹窗授权
+5. 授权成功自动进协助界面（录制也会自动停止）
+
+## 00:20 saveRecording() 未重置 KEY_AUTO_DISABLED 导致二次回放仍被禁用
+
+### Bug: 重新录制成功后，第二次触发仍走"自动授权已禁用"分支
+- **根因**: `PermissionRecordManager.saveRecording()` 保存新录制时没有重置 `KEY_AUTO_DISABLED` 和 `KEY_REPLAY_FAIL_COUNT`。之前测试自动回放失败3次触发了自动禁用，重新录制后禁用标志仍为 true。
+- **修复**: 在 `saveRecording()` 成功后追加：
+  ```kotlin
+  prefs.edit()
+      .remove(KEY_AUTO_DISABLED)
+      .remove(KEY_REPLAY_FAIL_COUNT)
+      .apply()
+  ```
+- **验证**: 用户需重新录制 → 第二次发请求验证自动回放流程
+
+### 涉及文件
+- `PermissionRecordManager.kt` — `saveRecording()` 方法，v11 修改
+- 已有 `clearRecording()` 和 `resetAutoDisabled()` 方法，但 `saveRecording()` 成功时没自动调用
+
+### HyperOS 两步弹窗结构（已验证）
+1. 「要开始使用跌倒宝录制或投放吗？」→ 点 `android:id/button1`（下一步）
+2. 「选择要分享的应用」→ 点「跌倒宝」应用图标（content-desc 含「跌倒宝」）
+
+### 当前状态
+- 代码已修改，待编译安装验证
+- K70 设备之前断开连接（15:48 adb devices 无输出）
+- Git 已提交: `c44e5ffac refactor: 彻底删除所有自动点击逻辑`
+# 2026-05-10 Daily Memory
+
+## 00:02 RemoteAssistService 录制流程修复
+
+### Bug: TouchRecordOverlay 未激活导致录制为空
+- **根因**: 用户点"好的，开始"后直接调 `requestMediaProjection()` 弹系统弹窗，但没有先启动 MediaProjection 录制。TouchRecordOverlay 没激活，弹窗上用户的触摸操作完全没被拦截录制。
+- **修复**: 在 `requestMediaProjection()` 之前先调 `RemoteAssistService.instance?.startMpRecording()`，激活 TouchRecordOverlay 拦截触摸坐标。
+
+### RemoteAssistService API 注意事项
+- `getInstance()` 是错误的调用方式，正确的是 `instance` 属性（Kotlin object 单例的 @JvmStatic companion 属性）
+- 用 `RemoteAssistService.instance?.xxx()` 而非 `RemoteAssistService.getInstance()?.xxx()`
+
+### 修复后的完整流程
+1. 点"允许" → 录制引导弹窗
+2. 点"好的，开始" → **先启动录制(Overlay激活)** → 再弹出 MediaProjection 系统弹窗
+3. 用户操作弹窗 → Overlay 拦截每次触摸坐标 → 录进 recordedSteps
+4. 授权成功 → `onActivityResult` → 保存录制
+
+## 00:07 自动回放触发 + 录制状态 Toast 提示
+
+### 3处改动
+
+**1. 恢复自动回放触发**（`RemoteAssistService.onAccessibilityEvent`）
+- 检测到 `TYPE_WINDOW_STATE_CHANGED` + 权限弹窗存在 + 有录制 + 未禁用 → 自动调 `tryAutoHandle()`
+
+**2. `startPermissionFlow()` 区分首次/回放**
+- **有录制** → 直接 `requestMediaProjection()`，不弹引导框，AccessibilityService 自动回放
+- **有录制但被禁用** → 提示"自动授权已禁用，请重新录制"，进录制流程
+- **无录制** → 正常录制引导
+
+**3. 录制状态 Toast 提示**
+- 录制开始："🎬 录制中..."
+- 录制成功："✅ 录制完成！共 X 步，下次自动完成"
+- 录制失败："⚠️ 未录制到操作，请重试"
+
+## 00:14 录制永不结束 + Toast 不显示修复
+
+### Bug1: 录制永不结束，手机卡住
+- **根因**: 首次录制流程里，弹系统弹窗后没有显示 `showLoading()`（含"完成录制"按钮）。用户操作完弹窗直接进 `startScreenCapture()`，TouchRecordOverlay 一直没关，持续拦截所有触摸导致手机卡。
+- **修复**: 弹系统弹窗后立即调 `showLoading()`，让用户看到"完成录制"按钮
+- **兜底**: `onActivityResult` 成功/失败都先调 `stopMpRecording()` 关 Overlay
+
+### Bug2: Toast 不显示
+- **根因**: AccessibilityService 的回调不在主线程，`Toast.makeText().show()` 静默失败。
+- **修复**: 所有 Toast 包在 `handler.post { }` 里
+
+## 00:20 saveRecording() 未重置 KEY_AUTO_DISABLED 导致二次回放仍被禁用
+
+### Bug: 重新录制成功后，第二次触发仍走"自动授权已禁用"分支
+- **根因**: `PermissionRecordManager.saveRecording()` 保存新录制时没有重置 `KEY_AUTO_DISABLED` 和 `KEY_REPLAY_FAIL_COUNT`。之前测试自动回放失败3次触发了自动禁用，重新录制后禁用标志仍为 true。
+- **修复**: 在 `saveRecording()` 成功后追加清除 KEY_AUTO_DISABLED 和 KEY_REPLAY_FAIL_COUNT
+- **涉及文件**: `PermissionRecordManager.kt` — `saveRecording()` 方法
+- Git 已提交: `c44e5ffac refactor: 彻底删除所有自动点击逻辑`
+
+### HyperOS 两步弹窗结构（已验证）
+1. 「要开始使用跌倒宝录制或投放吗？」→ 点 `android:id/button1`（下一步）
+2. 「选择要分享的应用」→ 点「跌倒宝」应用图标（content-desc 含「跌倒宝」）
+
+## 00:30 录制坐标误录修复 + 取消自动禁用
+
+### Bug: 录到的坐标全是 App UI 点击，不是弹窗按钮
+- **根因**: TouchRecordOverlay 在 `requestMediaProjection()` 之前就开始录制，用户点"好的，开始"按钮的触摸被录进去（step 0: (1085, 2401) 是"好的，开始"按钮坐标）
+- **K70 屏幕分辨率**: 1440×3200，录到的坐标全在下半屏（App UI 区域）
+- **连锁问题**: 回放失败3次 → 自动禁用 → 重置又被覆盖
+
+### Fix 1: 录制忽略前1秒触摸
+- `recordTouchCoord()` 加 1000ms 冷启动期，`System.currentTimeMillis() - recordingStartTime < 1000` 时直接 return
+- 跳过"好的，开始"按钮的误录
+
+### Fix 2: 取消自动禁用
+- 删除 `PermissionRecordManager` 中的自动禁用逻辑（回放失败不再锁死，允许无限重试）
+- `tryAutoHandle()` 失败只 log 不禁用
+- `startPermissionFlow()` 不再检查 `isAutoDisabled`
+- `saveRecording()` 不再清除 KEY_AUTO_DISABLED（因为不再有禁用逻辑）
+
+### 测试步骤
+1. 先清除旧录制（设置页 → 清除录制）
+2. 子女端发请求 → 老人端点"允许" → 录制引导 → 点"好的，开始"
+3. 等 1 秒 → 操作系统弹窗授权
+4. 第二次发请求 → 应该看到"🚀 自动授权中..." → 自动回放
+# 2026-05-10 Daily Memory
+
+## 00:02 RemoteAssistService 录制流程修复
+
+### Bug: TouchRecordOverlay 未激活导致录制为空
+- **根因**: 用户点"好的，开始"后直接调 `requestMediaProjection()` 弹系统弹窗，但没有先启动 MediaProjection 录制。TouchRecordOverlay 没激活，弹窗上用户的触摸操作完全没被拦截录制。
+- **修复**: 在 `requestMediaProjection()` 之前先调 `RemoteAssistService.instance?.startMpRecording()`，激活 TouchRecordOverlay 拦截触摸坐标。
+
+### RemoteAssistService API 注意事项
+- `getInstance()` 是错误的调用方式，正确的是 `instance` 属性（Kotlin object 单例的 @JvmStatic companion 属性）
+- 用 `RemoteAssistService.instance?.xxx()` 而非 `RemoteAssistService.getInstance()?.xxx()`
+
+### 修复后的完整流程
+1. 点"允许" → 录制引导弹窗
+2. 点"好的，开始" → **先启动录制(Overlay激活)** → 再弹出 MediaProjection 系统弹窗
+3. 用户操作弹窗 → Overlay 拦截每次触摸坐标 → 录进 recordedSteps
+4. 授权成功 → `onActivityResult` → 保存录制
+
+## 00:07 自动回放触发 + 录制状态 Toast 提示
+
+### 3处改动
+
+**1. 恢复自动回放触发**（`RemoteAssistService.onAccessibilityEvent`）
+- 检测到 `TYPE_WINDOW_STATE_CHANGED` + 权限弹窗存在 + 有录制 + 未禁用 → 自动调 `tryAutoHandle()`
+
+**2. `startPermissionFlow()` 区分首次/回放**
+- **有录制** → 直接 `requestMediaProjection()`，不弹引导框，AccessibilityService 自动回放
+- **有录制但被禁用** → 提示"自动授权已禁用，请重新录制"，进录制流程
+- **无录制** → 正常录制引导
+
+**3. 录制状态 Toast 提示**
+- 录制开始："🎬 录制中..."
+- 录制成功："✅ 录制完成！共 X 步，下次自动完成"
+- 录制失败："⚠️ 未录制到操作，请重试"
+
+## 00:14 录制永不结束 + Toast 不显示修复
+
+### Bug1: 录制永不结束，手机卡住
+- **根因**: 首次录制流程里，弹系统弹窗后没有显示 `showLoading()`（含"完成录制"按钮）。用户操作完弹窗直接进 `startScreenCapture()`，TouchRecordOverlay 一直没关，持续拦截所有触摸导致手机卡。
+- **修复**: 弹系统弹窗后立即调 `showLoading()`，让用户看到"完成录制"按钮
+- **兜底**: `onActivityResult` 成功/失败都先调 `stopMpRecording()` 关 Overlay
+
+### Bug2: Toast 不显示
+- **根因**: AccessibilityService 的回调不在主线程，`Toast.makeText().show()` 静默失败。
+- **修复**: 所有 Toast 包在 `handler.post { }` 里
+
+## 00:20 saveRecording() 未重置 KEY_AUTO_DISABLED 导致二次回放仍被禁用
+
+### Bug: 重新录制成功后，第二次触发仍走"自动授权已禁用"分支
+- **根因**: `PermissionRecordManager.saveRecording()` 保存新录制时没有重置 `KEY_AUTO_DISABLED` 和 `KEY_REPLAY_FAIL_COUNT`。
+- **修复**: 在 `saveRecording()` 成功后追加清除这两个 key
+
+### HyperOS 两步弹窗结构（已验证）
+1. 「要开始使用跌倒宝录制或投放吗？」→ 点 `android:id/button1`（下一步）
+2. 「选择要分享的应用」→ 点「跌倒宝」应用图标（content-desc 含「跌倒宝」）
+
+## 00:30 录制坐标误录修复 + 取消自动禁用
+
+### Bug: 录到的坐标全是 App UI 点击，不是弹窗按钮
+- **根因**: TouchRecordOverlay 在 `requestMediaProjection()` 之前就开始录制，用户点"好的，开始"按钮的触摸被录进去
+- **K70 屏幕分辨率**: 1440×3200
+
+### Fix 1: 录制忽略前1秒触摸
+- `recordTouchCoord()` 加 1000ms 冷启动期
+
+### Fix 2: 取消自动禁用
+- 删除回放失败自动禁用逻辑，允许无限重试
+- `tryAutoHandle()` 失败只 log 不禁用
+
+## 00:39 SettingsFragment 录制状态读错 key
+
+### Bug: 设置页永远显示"未录制"，清除录制也清错 key
+- **根因**: v9 改了 SharedPreferences key 名，但 SettingsFragment 没同步
+  - 设置页读的 key: `recorded_coords`（旧版 v9 之前的 key）
+  - PermissionRecordManager 实际写的 key: `recorded_steps_v9`（v9 改了 key 名）
+  - 设置页读失败次数 key: `fail_count`
+  - PermissionRecordManager 实际 key: `replay_fail_count`
+- **修复**: SettingsFragment 的 `updatePermissionRecordStatus()` 和 `showReRecordPermissionDialog()` 读取和清除都要用 PermissionRecordManager 的常量 key
+- **涉及文件**: `SettingsFragment.kt` 第 206-265 行附近
+# 2026-05-10 Daily Memory
+
+## 00:02 RemoteAssistService 录制流程修复
+
+### Bug: TouchRecordOverlay 未激活导致录制为空
+- **根因**: 用户点"好的，开始"后直接调 `requestMediaProjection()` 弹系统弹窗，但没有先启动 MediaProjection 录制。TouchRecordOverlay 没激活，弹窗上用户的触摸操作完全没被拦截录制。
+- **修复**: 在 `requestMediaProjection()` 之前先调 `RemoteAssistService.instance?.startMpRecording()`，激活 TouchRecordOverlay 拦截触摸坐标。
+
+### RemoteAssistService API 注意事项
+- `getInstance()` 是错误的调用方式，正确的是 `instance` 属性（Kotlin object 单例的 @JvmStatic companion 属性）
+- 用 `RemoteAssistService.instance?.xxx()` 而非 `RemoteAssistService.getInstance()?.xxx()`
+
+### 修复后的完整流程
+1. 点"允许" → 录制引导弹窗
+2. 点"好的，开始" → **先启动录制(Overlay激活)** → 再弹出 MediaProjection 系统弹窗
+3. 用户操作弹窗 → Overlay 拦截每次触摸坐标 → 录进 recordedSteps
+4. 授权成功 → `onActivityResult` → 保存录制
+
+## 00:07 自动回放触发 + 录制状态 Toast 提示
+
+### 3处改动
+
+**1. 恢复自动回放触发**（`RemoteAssistService.onAccessibilityEvent`）
+- 检测到 `TYPE_WINDOW_STATE_CHANGED` + 权限弹窗存在 + 有录制 + 未禁用 → 自动调 `tryAutoHandle()`
+
+**2. `startPermissionFlow()` 区分首次/回放**
+- **有录制** → 直接 `requestMediaProjection()`，不弹引导框，AccessibilityService 自动回放
+- **有录制但被禁用** → 提示"自动授权已禁用，请重新录制"，进录制流程
+- **无录制** → 正常录制引导
+
+**3. 录制状态 Toast 提示**
+- 录制开始："🎬 录制中..."
+- 录制成功："✅ 录制完成！共 X 步，下次自动完成"
+- 录制失败："⚠️ 未录制到操作，请重试"
+
+## 00:14 录制永不结束 + Toast 不显示修复
+
+### Bug1: 录制永不结束，手机卡住
+- **根因**: 首次录制流程里，弹系统弹窗后没有显示 `showLoading()`（含"完成录制"按钮）。用户操作完弹窗直接进 `startScreenCapture()`，TouchRecordOverlay 一直没关，持续拦截所有触摸导致手机卡。
+- **修复**: 弹系统弹窗后立即调 `showLoading()`，让用户看到"完成录制"按钮
+- **兜底**: `onActivityResult` 成功/失败都先调 `stopMpRecording()` 关 Overlay
+
+### Bug2: Toast 不显示
+- **根因**: AccessibilityService 的回调不在主线程，`Toast.makeText().show()` 静默失败。
+- **修复**: 所有 Toast 包在 `handler.post { }` 里
+
+## 00:20 saveRecording() 未重置 KEY_AUTO_DISABLED 导致二次回放仍被禁用
+
+### Bug: 重新录制成功后，第二次触发仍走"自动授权已禁用"分支
+- **根因**: `PermissionRecordManager.saveRecording()` 保存新录制时没有重置 `KEY_AUTO_DISABLED` 和 `KEY_REPLAY_FAIL_COUNT`。
+- **修复**: 在 `saveRecording()` 成功后追加清除这两个 key
+- Git 已提交: `c44e5ffac refactor: 彻底删除所有自动点击逻辑`
+
+### HyperOS 两步弹窗结构（已验证）
+1. 「要开始使用跌倒宝录制或投放吗？」→ 点 `android:id/button1`（下一步）
+2. 「选择要分享的应用」→ 点「跌倒宝」应用图标（content-desc 含「跌倒宝」）
+
+## 00:30 录制坐标误录修复 + 取消自动禁用
+
+### Bug: 录到的坐标全是 App UI 点击，不是弹窗按钮
+- **根因**: TouchRecordOverlay 在 `requestMediaProjection()` 之前就开始录制，用户点"好的，开始"按钮的触摸被录进去
+- **K70 屏幕分辨率**: 1440×3200
+
+### Fix 1: 录制忽略前1秒触摸
+- `recordTouchCoord()` 加 1000ms 冷启动期
+
+### Fix 2: 取消自动禁用
+- 删除回放失败自动禁用逻辑，允许无限重试
+- `tryAutoHandle()` 失败只 log 不禁用
+
+## 00:39 SettingsFragment 录制状态读错 key
+
+### Bug: 设置页永远显示"未录制"，清除录制也清错 key
+- **根因**: v9 改了 SharedPreferences key 名，但 SettingsFragment 没同步
+  - 设置页读的 key: `recorded_coords`（旧版 v9 之前的 key）
+  - PermissionRecordManager 实际写的 key: `recorded_steps_v9`（v9 改了 key 名）
+  - 设置页读失败次数 key: `fail_count`
+  - PermissionRecordManager 实际 key: `replay_fail_count`
+- **修复**: SettingsFragment 的 `updatePermissionRecordStatus()` 和 `showReRecordPermissionDialog()` 读取和清除都要用 PermissionRecordManager 的常量 key
+
+## 00:53 回放逻辑修复（步骤乱序 + 太快不等人 + 回放完卡卡的）
+
+### Bug1: 步骤乱序，AOSP 快速通道和录制回放重复点击
+- **根因**: 有录制数据时，AOSP 快速通道先点 button1，然后录制回放又把 button1 那步再点一遍
+- **修复**: 有录制数据时**跳过 AOSP**，只走录制回放，步骤不会重复
+
+### Bug2: 回放太快，弹窗没刷新就点下一步
+- **根因**: 之前固定 1s 延时就点下一步，弹窗可能还没渲染完
+- **修复**: 点击后先等 1.5s（让系统处理动画），然后轮询检查窗口数量是否变化（弹窗切换 = 新弹窗出来了），检测到变化后再等 500ms 让新弹窗渲染完 → 继续下一步，超时 3s 兜底
+
+### Bug3: 回放完卡卡的，状态没清理
+- **根因**: 回放结束（成功或失败）时没有清理所有残留的 Runnable 和 `isReplaying` 标志
+- **修复**: 在 `onReplaySuccess` 和 `onReplayFailed` 中清理 `dialogWaitRunnable` 和所有 handler callbacks
+
+### 测试建议
+- 先在设置页清除旧录制，重新录一次再测试回放
+- 旧录制的坐标可能不准
+# 2026-05-10 Daily Memory
+
+## 00:02 RemoteAssistService 录制流程修复
+
+### Bug: TouchRecordOverlay 未激活导致录制为空
+- **根因**: 用户点"好的，开始"后直接调 `requestMediaProjection()` 弹系统弹窗，但没有先启动 MediaProjection 录制。TouchRecordOverlay 没激活，弹窗上用户的触摸操作完全没被拦截录制。
+- **修复**: 在 `requestMediaProjection()` 之前先调 `RemoteAssistService.instance?.startMpRecording()`，激活 TouchRecordOverlay 拦截触摸坐标。
+
+### RemoteAssistService API 注意事项
+- `getInstance()` 是错误的调用方式，正确的是 `instance` 属性（Kotlin object 单例的 @JvmStatic companion 属性）
+- 用 `RemoteAssistService.instance?.xxx()` 而非 `RemoteAssistService.getInstance()?.xxx()`
+
+### 修复后的完整流程
+1. 点"允许" → 录制引导弹窗
+2. 点"好的，开始" → **先启动录制(Overlay激活)** → 再弹出 MediaProjection 系统弹窗
+3. 用户操作弹窗 → Overlay 拦截每次触摸坐标 → 录进 recordedSteps
+4. 授权成功 → `onActivityResult` → 保存录制
+
+## 00:07 自动回放触发 + 录制状态 Toast 提示
+
+### 3处改动
+
+**1. 恢复自动回放触发**（`RemoteAssistService.onAccessibilityEvent`）
+- 检测到 `TYPE_WINDOW_STATE_CHANGED` + 权限弹窗存在 + 有录制 + 未禁用 → 自动调 `tryAutoHandle()`
+
+**2. `startPermissionFlow()` 区分首次/回放**
+- **有录制** → 直接 `requestMediaProjection()`，不弹引导框，AccessibilityService 自动回放
+- **有录制但被禁用** → 提示"自动授权已禁用，请重新录制"，进录制流程
+- **无录制** → 正常录制引导
+
+**3. 录制状态 Toast 提示**
+- 录制开始："🎬 录制中..."
+- 录制成功："✅ 录制完成！共 X 步，下次自动完成"
+- 录制失败："⚠️ 未录制到操作，请重试"
+
+## 00:14 录制永不结束 + Toast 不显示修复
+
+### Bug1: 录制永不结束，手机卡住
+- **根因**: 首次录制流程里，弹系统弹窗后没有显示 `showLoading()`（含"完成录制"按钮）。用户操作完弹窗直接进 `startScreenCapture()`，TouchRecordOverlay 一直没关，持续拦截所有触摸导致手机卡。
+- **修复**: 弹系统弹窗后立即调 `showLoading()`，让用户看到"完成录制"按钮
+- **兜底**: `onActivityResult` 成功/失败都先调 `stopMpRecording()` 关 Overlay
+
+### Bug2: Toast 不显示
+- **根因**: AccessibilityService 的回调不在主线程，`Toast.makeText().show()` 静默失败。
+- **修复**: 所有 Toast 包在 `handler.post { }` 里
+
+## 00:20 saveRecording() 未重置 KEY_AUTO_DISABLED 导致二次回放仍被禁用
+
+### Bug: 重新录制成功后，第二次触发仍走"自动授权已禁用"分支
+- **根因**: `PermissionRecordManager.saveRecording()` 保存新录制时没有重置 `KEY_AUTO_DISABLED` 和 `KEY_REPLAY_FAIL_COUNT`。
+- **修复**: 在 `saveRecording()` 成功后追加清除这两个 key
+- Git 已提交: `c44e5ffac refactor: 彻底删除所有自动点击逻辑`
+
+### HyperOS 两步弹窗结构（已验证）
+1. 「要开始使用跌倒宝录制或投放吗？」→ 点 `android:id/button1`（下一步）
+2. 「选择要分享的应用」→ 点「跌倒宝」应用图标（content-desc 含「跌倒宝」）
+
+## 00:30 录制坐标误录修复 + 取消自动禁用
+
+### Bug: 录到的坐标全是 App UI 点击，不是弹窗按钮
+- **根因**: TouchRecordOverlay 在 `requestMediaProjection()` 之前就开始录制，用户点"好的，开始"按钮的触摸被录进去
+- **K70 屏幕分辨率**: 1440×3200
+
+### Fix 1: 录制忽略前1秒触摸
+- `recordTouchCoord()` 加 1000ms 冷启动期
+
+### Fix 2: 取消自动禁用
+- 删除回放失败自动禁用逻辑，允许无限重试
+- `tryAutoHandle()` 失败只 log 不禁用
+
+## 00:39 SettingsFragment 录制状态读错 key
+
+### Bug: 设置页永远显示"未录制"，清除录制也清错 key
+- **根因**: v9 改了 SharedPreferences key 名，但 SettingsFragment 没同步
+  - 设置页读的 key: `recorded_coords`（旧版 v9 之前的 key）
+  - PermissionRecordManager 实际写的 key: `recorded_steps_v9`（v9 改了 key 名）
+  - 设置页读失败次数 key: `fail_count`
+  - PermissionRecordManager 实际 key: `replay_fail_count`
+- **修复**: SettingsFragment 的 `updatePermissionRecordStatus()` 和 `showReRecordPermissionDialog()` 读取和清除都要用 PermissionRecordManager 的常量 key
+
+## 00:53 回放逻辑修复（步骤乱序 + 太快不等人 + 回放完卡卡的）
+
+### Bug1: 步骤乱序，AOSP 快速通道和录制回放重复点击
+- **根因**: 有录制数据时，AOSP 快速通道先点 button1，然后录制回放又把 button1 那步再点一遍
+- **修复**: 有录制数据时**跳过 AOSP**，只走录制回放，步骤不会重复
+
+### Bug2: 回放太快，弹窗没刷新就点下一步
+- **根因**: 之前固定 1s 延时就点下一步，弹窗可能还没渲染完
+- **修复**: 点击后先等 1.5s（让系统处理动画），然后轮询检查窗口数量是否变化（弹窗切换 = 新弹窗出来了），检测到变化后再等 500ms 让新弹窗渲染完 → 继续下一步，超时 3s 兜底
+
+### Bug3: 回放完卡卡的，状态没清理
+- **根因**: 回放结束（成功或失败）时没有清理所有残留的 Runnable 和 `isReplaying` 标志
+- **修复**: 在 `onReplaySuccess` 和 `onReplayFailed` 中清理 `dialogWaitRunnable` 和所有 handler callbacks
+
+## 09:13 v14 回放成功后倒计时卡住 — 广播机制修复
+
+### Bug: 回放成功后 RemoteAssistActivity 倒计时继续，不进入协助界面
+- **根因**: `PermissionRecordManager` 运行在 AccessibilityService（独立进程），无法直接调用 Activity 方法。回放成功后 Activity 不知道，30秒倒计时继续跑
+- **解决方案**: 广播机制
+  ```
+  PermissionRecordManager.onReplaySuccess()
+    → sendBroadcast(ACTION_AUTO_PERMISSION_GRANTED)
+        ↓
+  RemoteAssistActivity.registerAutoPermissionReceiver()
+    → 收到广播 → cancel countdown → startScreenCapture()
+  ```
+
+### 同修: getDialogSignature() 对 HyperOS 弹窗失效
+- **根因**: `getDialogSignature()` 依赖 `window.title` 关键词，但 HyperOS MediaProjection 弹窗属于 `com.android.systemui`，`window.title` 永远为 null
+- **修复**: 过滤前先用 `hasPermissionDialog()` 扫描节点确认是权限弹窗，再用节点内容（alertTitle + button1Text）生成签名
+
+### 改动文件
+| 文件 | 改动 |
+|------|------|
+| `PermissionRecordManager.kt` | `getDialogSignature()` 改用节点内容；`onReplaySuccess/onAospSuccess` 发广播 |
+| `RemoteAssistService.kt` | 注册 `onReplayComplete` 回调；添加 `ACTION_AUTO_PERMISSION_GRANTED` 常量；添加 `broadcastAction()` 工具方法 |
+| `RemoteAssistActivity.kt` | 注册广播接收器；`onDestroy` 注销；收到广播后取消倒计时 + 启动屏幕共享 |
+
+### 状态
+- ✅ 编译通过 + 安装成功
+- ✅ Git commit: `1de1d5b08`
+- ⏳ 待 K70 实机测试完整流程
+# 2026-05-10 Daily Memory
+
+## 00:02 RemoteAssistService 录制流程修复
+
+### Bug: TouchRecordOverlay 未激活导致录制为空
+- **根因**: 用户点"好的，开始"后直接调 `requestMediaProjection()` 弹系统弹窗，但没有先启动 MediaProjection 录制。TouchRecordOverlay 没激活，弹窗上用户的触摸操作完全没被拦截录制。
+- **修复**: 在 `requestMediaProjection()` 之前先调 `RemoteAssistService.instance?.startMpRecording()`，激活 TouchRecordOverlay 拦截触摸坐标。
+
+### RemoteAssistService API 注意事项
+- `getInstance()` 是错误的调用方式，正确的是 `instance` 属性（Kotlin object 单例的 @JvmStatic companion 属性）
+- 用 `RemoteAssistService.instance?.xxx()` 而非 `RemoteAssistService.getInstance()?.xxx()`
+
+### 修复后的完整流程
+1. 点"允许" → 录制引导弹窗
+2. 点"好的，开始" → **先启动录制(Overlay激活)** → 再弹出 MediaProjection 系统弹窗
+3. 用户操作弹窗 → Overlay 拦截每次触摸坐标 → 录进 recordedSteps
+4. 授权成功 → `onActivityResult` → 保存录制
+
+## 00:07 自动回放触发 + 录制状态 Toast 提示
+
+### 3处改动
+
+**1. 恢复自动回放触发**（`RemoteAssistService.onAccessibilityEvent`）
+- 检测到 `TYPE_WINDOW_STATE_CHANGED` + 权限弹窗存在 + 有录制 + 未禁用 → 自动调 `tryAutoHandle()`
+
+**2. `startPermissionFlow()` 区分首次/回放**
+- **有录制** → 直接 `requestMediaProjection()`，不弹引导框，AccessibilityService 自动回放
+- **有录制但被禁用** → 提示"自动授权已禁用，请重新录制"，进录制流程
+- **无录制** → 正常录制引导
+
+**3. 录制状态 Toast 提示**
+- 录制开始："🎬 录制中..."
+- 录制成功："✅ 录制完成！共 X 步，下次自动完成"
+- 录制失败："⚠️ 未录制到操作，请重试"
+
+## 00:14 录制永不结束 + Toast 不显示修复
+
+### Bug1: 录制永不结束，手机卡住
+- **根因**: 首次录制流程里，弹系统弹窗后没有显示 `showLoading()`（含"完成录制"按钮）。用户操作完弹窗直接进 `startScreenCapture()`，TouchRecordOverlay 一直没关，持续拦截所有触摸导致手机卡。
+- **修复**: 弹系统弹窗后立即调 `showLoading()`，让用户看到"完成录制"按钮
+- **兜底**: `onActivityResult` 成功/失败都先调 `stopMpRecording()` 关 Overlay
+
+### Bug2: Toast 不显示
+- **根因**: AccessibilityService 的回调不在主线程，`Toast.makeText().show()` 静默失败。
+- **修复**: 所有 Toast 包在 `handler.post { }` 里
+
+## 00:20 saveRecording() 未重置 KEY_AUTO_DISABLED 导致二次回放仍被禁用
+
+### Bug: 重新录制成功后，第二次触发仍走"自动授权已禁用"分支
+- **根因**: `PermissionRecordManager.saveRecording()` 保存新录制时没有重置 `KEY_AUTO_DISABLED` 和 `KEY_REPLAY_FAIL_COUNT`。
+- **修复**: 在 `saveRecording()` 成功后追加清除这两个 key
+- Git 已提交: `c44e5ffac refactor: 彻底删除所有自动点击逻辑`
+
+### HyperOS 两步弹窗结构（已验证）
+1. 「要开始使用跌倒宝录制或投放吗？」→ 点 `android:id/button1`（下一步）
+2. 「选择要分享的应用」→ 点「跌倒宝」应用图标（content-desc 含「跌倒宝」）
+
+## 00:30 录制坐标误录修复 + 取消自动禁用
+
+### Bug: 录到的坐标全是 App UI 点击，不是弹窗按钮
+- **根因**: TouchRecordOverlay 在 `requestMediaProjection()` 之前就开始录制，用户点"好的，开始"按钮的触摸被录进去
+- **K70 屏幕分辨率**: 1440×3200
+
+### Fix 1: 录制忽略前1秒触摸
+- `recordTouchCoord()` 加 1000ms 冷启动期
+
+### Fix 2: 取消自动禁用
+- 删除回放失败自动禁用逻辑，允许无限重试
+- `tryAutoHandle()` 失败只 log 不禁用
+
+## 00:39 SettingsFragment 录制状态读错 key
+
+### Bug: 设置页永远显示"未录制"，清除录制也清错 key
+- **根因**: v9 改了 SharedPreferences key 名，但 SettingsFragment 没同步
+  - 设置页读的 key: `recorded_coords`（旧版 v9 之前的 key）
+  - PermissionRecordManager 实际写的 key: `recorded_steps_v9`（v9 改了 key 名）
+  - 设置页读失败次数 key: `fail_count`
+  - PermissionRecordManager 实际 key: `replay_fail_count`
+- **修复**: SettingsFragment 的 `updatePermissionRecordStatus()` 和 `showReRecordPermissionDialog()` 读取和清除都要用 PermissionRecordManager 的常量 key
+
+## 00:53 回放逻辑修复（步骤乱序 + 太快不等人 + 回放完卡卡的）
+
+### Bug1: 步骤乱序，AOSP 快速通道和录制回放重复点击
+- **根因**: 有录制数据时，AOSP 快速通道先点 button1，然后录制回放又把 button1 那步再点一遍
+- **修复**: 有录制数据时**跳过 AOSP**，只走录制回放，步骤不会重复
+
+### Bug2: 回放太快，弹窗没刷新就点下一步
+- **根因**: 之前固定 1s 延时就点下一步，弹窗可能还没渲染完
+- **修复**: 点击后先等 1.5s（让系统处理动画），然后轮询检查窗口数量是否变化（弹窗切换 = 新弹窗出来了），检测到变化后再等 500ms 让新弹窗渲染完 → 继续下一步，超时 3s 兜底
+
+### Bug3: 回放完卡卡的，状态没清理
+- **根因**: 回放结束（成功或失败）时没有清理所有残留的 Runnable 和 `isReplaying` 标志
+- **修复**: 在 `onReplaySuccess` 和 `onReplayFailed` 中清理 `dialogWaitRunnable` 和所有 handler callbacks
+
+## 09:13 v14 回放成功后倒计时卡住 — 广播机制修复
+
+### Bug: 回放成功后 RemoteAssistActivity 倒计时继续，不进入协助界面
+- **根因**: `PermissionRecordManager` 运行在 AccessibilityService（独立进程），无法直接调用 Activity 方法。回放成功后 Activity 不知道，30秒倒计时继续跑
+- **解决方案**: 广播机制
+  ```
+  PermissionRecordManager.onReplaySuccess()
+    → sendBroadcast(ACTION_AUTO_PERMISSION_GRANTED)
+        ↓
+  RemoteAssistActivity.registerAutoPermissionReceiver()
+    → 收到广播 → cancel countdown → startScreenCapture()
+  ```
+
+### 同修: getDialogSignature() 对 HyperOS 弹窗失效
+- **根因**: `getDialogSignature()` 依赖 `window.title` 关键词，但 HyperOS MediaProjection 弹窗属于 `com.android.systemui`，`window.title` 永远为 null
+- **修复**: 过滤前先用 `hasPermissionDialog()` 扫描节点确认是权限弹窗，再用节点内容（alertTitle + button1Text）生成签名
+
+### 改动文件
+| 文件 | 改动 |
+|------|------|
+| `PermissionRecordManager.kt` | `getDialogSignature()` 改用节点内容；`onReplaySuccess/onAospSuccess` 发广播 |
+| `RemoteAssistService.kt` | 注册 `onReplayComplete` 回调；添加 `ACTION_AUTO_PERMISSION_GRANTED` 常量；添加 `broadcastAction()` 工具方法 |
+| `RemoteAssistActivity.kt` | 注册广播接收器；`onDestroy` 注销；收到广播后取消倒计时 + 启动屏幕共享 |
+
+### 状态
+- ✅ 编译通过 + 安装成功
+- ✅ Git commit: `1de1d5b08`
+- ⏳ 待 K70 实机测试完整流程
+
+## 09:35 v14 测试反馈 — 三个问题
+
+### 用户反馈
+1. 还没点"允许"，倒计时就卡卡的
+2. 点了"允许"后第一步成功，第2、3步没成功
+3. 成功之后手机还贼卡，估计还在回放
+
+### 根因分析
+
+**1. 倒计时卡（还没点"允许"就卡）**
+- `onAccessibilityEvent` 里 `TYPE_WINDOW_STATE_CHANGED` / `TYPE_WINDOWS_CHANGED` 每次都调 `hasPermissionDialog()`，这个方法遍历所有窗口 + 所有关键词做 `findAccessibilityNodeInfosByText`，主线程阻塞，倒计时卡顿
+- **任何窗口变化**（不只是权限弹窗）都触发全量扫描
+
+**2. 步骤2/3失败**
+- `getDialogSignature()` 有 bug：循环内调全局 `hasPermissionDialog()`（不是检查单个窗口 w），只要有一个窗口命中就 return true，导致对所有窗口都生成签名
+- `dialogWaitRunnable` 每300ms轮询一次，每次调 `getDialogSignature()` 都做全窗口扫描 + 节点遍历，签名检测对 HyperOS 基本失效
+- 轮询太频繁（300ms）+ 签名逻辑有 bug → 弹窗内容切换检测不到 → 超时3s后强制下一步
+
+**3. 回放后手机卡**
+- `dialogWaitRunnable` 300ms 一次重扫描即使回放完成
+- `onActivityResult` 和广播都可能触发 `startScreenCapture()`，双重调用
+- `cleanupReplayState()` 只移除 `dialogWaitRunnable`，但 `dialogWaitRunnable` 内部还 post 了新的 `this`（自引用 Runnable）
+
+### v15 修复方案（待实施）
+- **去掉签名检测和轮询**，改为固定延时（每步2s）+ 弹窗消失检测
+- `hasPermissionDialog()` 加防抖（500ms内不重复扫描）
+- `onReplaySuccess` 里 `handler.removeCallbacksAndMessages(null)` 替代只移除单个 runnable
+- 广播接收器加 `once` 标志防重复触发
+- `onActivityResult` 收到权限后也发广播（统一入口）
+# 2026-05-10 Daily Memory
+
+## 00:02 RemoteAssistService 录制流程修复
+
+### Bug: TouchRecordOverlay 未激活导致录制为空
+- **根因**: 用户点"好的，开始"后直接调 `requestMediaProjection()` 弹系统弹窗，但没有先启动 MediaProjection 录制。TouchRecordOverlay 没激活，弹窗上用户的触摸操作完全没被拦截录制。
+- **修复**: 在 `requestMediaProjection()` 之前先调 `RemoteAssistService.instance?.startMpRecording()`，激活 TouchRecordOverlay 拦截触摸坐标。
+
+### RemoteAssistService API 注意事项
+- `getInstance()` 是错误的调用方式，正确的是 `instance` 属性（Kotlin object 单例的 @JvmStatic companion 属性）
+- 用 `RemoteAssistService.instance?.xxx()` 而非 `RemoteAssistService.getInstance()?.xxx()`
+
+### 修复后的完整流程
+1. 点"允许" → 录制引导弹窗
+2. 点"好的，开始" → **先启动录制(Overlay激活)** → 再弹出 MediaProjection 系统弹窗
+3. 用户操作弹窗 → Overlay 拦截每次触摸坐标 → 录进 recordedSteps
+4. 授权成功 → `onActivityResult` → 保存录制
+
+## 00:07 自动回放触发 + 录制状态 Toast 提示
+
+### 3处改动
+
+**1. 恢复自动回放触发**（`RemoteAssistService.onAccessibilityEvent`）
+- 检测到 `TYPE_WINDOW_STATE_CHANGED` + 权限弹窗存在 + 有录制 + 未禁用 → 自动调 `tryAutoHandle()`
+
+**2. `startPermissionFlow()` 区分首次/回放**
+- **有录制** → 直接 `requestMediaProjection()`，不弹引导框，AccessibilityService 自动回放
+- **有录制但被禁用** → 提示"自动授权已禁用，请重新录制"，进录制流程
+- **无录制** → 正常录制引导
+
+**3. 录制状态 Toast 提示**
+- 录制开始："🎬 录制中..."
+- 录制成功："✅ 录制完成！共 X 步，下次自动完成"
+- 录制失败："⚠️ 未录制到操作，请重试"
+
+## 00:14 录制永不结束 + Toast 不显示修复
+
+### Bug1: 录制永不结束，手机卡住
+- **根因**: 首次录制流程里，弹系统弹窗后没有显示 `showLoading()`（含"完成录制"按钮）。用户操作完弹窗直接进 `startScreenCapture()`，TouchRecordOverlay 一直没关，持续拦截所有触摸导致手机卡。
+- **修复**: 弹系统弹窗后立即调 `showLoading()`，让用户看到"完成录制"按钮
+- **兜底**: `onActivityResult` 成功/失败都先调 `stopMpRecording()` 关 Overlay
+
+### Bug2: Toast 不显示
+- **根因**: AccessibilityService 的回调不在主线程，`Toast.makeText().show()` 静默失败。
+- **修复**: 所有 Toast 包在 `handler.post { }` 里
+
+## 00:20 saveRecording() 未重置 KEY_AUTO_DISABLED 导致二次回放仍被禁用
+
+### Bug: 重新录制成功后，第二次触发仍走"自动授权已禁用"分支
+- **根因**: `PermissionRecordManager.saveRecording()` 保存新录制时没有重置 `KEY_AUTO_DISABLED` 和 `KEY_REPLAY_FAIL_COUNT`。
+- **修复**: 在 `saveRecording()` 成功后追加清除这两个 key
+- Git 已提交: `c44e5ffac refactor: 彻底删除所有自动点击逻辑`
+
+### HyperOS 两步弹窗结构（已验证）
+1. 「要开始使用跌倒宝录制或投放吗？」→ 点 `android:id/button1`（下一步）
+2. 「选择要分享的应用」→ 点「跌倒宝」应用图标（content-desc 含「跌倒宝」）
+
+## 00:30 录制坐标误录修复 + 取消自动禁用
+
+### Bug: 录到的坐标全是 App UI 点击，不是弹窗按钮
+- **根因**: TouchRecordOverlay 在 `requestMediaProjection()` 之前就开始录制，用户点"好的，开始"按钮的触摸被录进去
+- **K70 屏幕分辨率**: 1440×3200
+
+### Fix 1: 录制忽略前1秒触摸
+- `recordTouchCoord()` 加 1000ms 冷启动期
+
+### Fix 2: 取消自动禁用
+- 删除回放失败自动禁用逻辑，允许无限重试
+- `tryAutoHandle()` 失败只 log 不禁用
+
+## 00:39 SettingsFragment 录制状态读错 key
+
+### Bug: 设置页永远显示"未录制"，清除录制也清错 key
+- **根因**: v9 改了 SharedPreferences key 名，但 SettingsFragment 没同步
+  - 设置页读的 key: `recorded_coords`（旧版 v9 之前的 key）
+  - PermissionRecordManager 实际写的 key: `recorded_steps_v9`（v9 改了 key 名）
+  - 设置页读失败次数 key: `fail_count`
+  - PermissionRecordManager 实际 key: `replay_fail_count`
+- **修复**: SettingsFragment 的 `updatePermissionRecordStatus()` 和 `showReRecordPermissionDialog()` 读取和清除都要用 PermissionRecordManager 的常量 key
+
+## 00:53 回放逻辑修复（步骤乱序 + 太快不等人 + 回放完卡卡的）
+
+### Bug1: 步骤乱序，AOSP 快速通道和录制回放重复点击
+- **根因**: 有录制数据时，AOSP 快速通道先点 button1，然后录制回放又把 button1 那步再点一遍
+- **修复**: 有录制数据时**跳过 AOSP**，只走录制回放，步骤不会重复
+
+### Bug2: 回放太快，弹窗没刷新就点下一步
+- **根因**: 之前固定 1s 延时就点下一步，弹窗可能还没渲染完
+- **修复**: 点击后先等 1.5s（让系统处理动画），然后轮询检查窗口数量是否变化（弹窗切换 = 新弹窗出来了），检测到变化后再等 500ms 让新弹窗渲染完 → 继续下一步，超时 3s 兜底
+
+### Bug3: 回放完卡卡的，状态没清理
+- **根因**: 回放结束（成功或失败）时没有清理所有残留的 Runnable 和 `isReplaying` 标志
+- **修复**: 在 `onReplaySuccess` 和 `onReplayFailed` 中清理 `dialogWaitRunnable` 和所有 handler callbacks
+
+## 09:13 v14 回放成功后倒计时卡住 — 广播机制修复
+
+### Bug: 回放成功后 RemoteAssistActivity 倒计时继续，不进入协助界面
+- **根因**: `PermissionRecordManager` 运行在 AccessibilityService（独立进程），无法直接调用 Activity 方法。回放成功后 Activity 不知道，30秒倒计时继续跑
+- **解决方案**: 广播机制
+  ```
+  PermissionRecordManager.onReplaySuccess()
+    → sendBroadcast(ACTION_AUTO_PERMISSION_GRANTED)
+        ↓
+  RemoteAssistActivity.registerAutoPermissionReceiver()
+    → 收到广播 → cancel countdown → startScreenCapture()
+  ```
+
+### 同修: getDialogSignature() 对 HyperOS 弹窗失效
+- **根因**: `getDialogSignature()` 依赖 `window.title` 关键词，但 HyperOS MediaProjection 弹窗属于 `com.android.systemui`，`window.title` 永远为 null
+- **修复**: 过滤前先用 `hasPermissionDialog()` 扫描节点确认是权限弹窗，再用节点内容（alertTitle + button1Text）生成签名
+
+### 状态
+- ✅ 编译通过 + 安装成功
+- ✅ Git commit: `1de1d5b08`
+- ❌ 用户反馈：倒计时还是卡，步骤2/3还是失败，回放后手机卡
+
+## 09:35 v14 测试反馈 — 三个问题
+
+### 用户反馈
+1. 还没点"允许"，倒计时就卡卡的
+2. 点了"允许"后第一步成功，第2、3步没成功
+3. 成功之后手机还贼卡，估计还在回放
+
+### 根因分析
+- `hasPermissionDialog()` 每次窗口变化都全量扫描所有窗口+所有关键词做 findAccessibilityNodeInfosByText，主线程阻塞导致倒计时卡顿
+- `getDialogSignature()` 有 bug：循环内调全局 `hasPermissionDialog()`（不是检查单个窗口 w），只要有一个窗口命中就 return true，导致签名无法区分不同弹窗
+- `dialogWaitRunnable` 每 300ms 轮询一次，每次都做全窗口扫描+节点遍历
+- `cleanupReplayState()` 只移除单个 runnable，轮询自引用还在跑
+- 广播接收器和 `onActivityResult` 都可能触发 `startScreenCapture()`
+
+## 09:57 v15 彻底修复 — 去轮询，用固定延时+防抖
+
+### 修复1：hasPermissionDialog() 500ms 防抖
+- `private var lastDialogCheckTime = 0L`
+- 在 `hasPermissionDialog()` 入口处：如果 `System.currentTimeMillis() - lastDialogCheckTime < 500`，返回 `lastDialogCheckResult`
+- 跳过全量扫描，直接返回缓存结果
+
+### 修复2：waitForDialogChangeAndReplay 简化为固定延时
+- 删除整个 `dialogWaitRunnable`、`preClickDialogSig`、`preClickWindowCount`、`dialogWaitStartTime` 等复杂逻辑
+- 删除 `getDialogSignature()` 函数（v13/v14 添加的，v15 不再需要）
+- 新逻辑：点击后 `handler.postDelayed(replayNextStep, 2000L)`
+- 回放最后一步后 `handler.postDelayed({ onReplaySuccess() }, 500L)` 等弹窗关闭
+
+### 修复3：cleanupReplayState 彻底清理
+- `handler.removeCallbacksAndMessages(null)` 替代只移除单个 `dialogWaitRunnable`
+
+### 修复4：广播接收器防重复
+- `permissionHandled` 标志，`startScreenCapture()` 只执行一次
+
+### 修复5：统一广播入口
+- `onActivityResult` 里也发广播（统一入口，不管权限来源是用户手动还是自动回放）
+
+### 状态
+- ✅ 编译通过 + 安装成功
+- ✅ Git commit: `ebc1933c3`
+- ⏳ 待 K70 实机测试
+# 2026-05-10 Daily Memory
+
+## 00:02 RemoteAssistService 录制流程修复
+
+### Bug: TouchRecordOverlay 未激活导致录制为空
+- **根因**: 用户点"好的，开始"后直接调 `requestMediaProjection()` 弹系统弹窗，但没有先启动 MediaProjection 录制。TouchRecordOverlay 没激活，弹窗上用户的触摸操作完全没被拦截录制。
+- **修复**: 在 `requestMediaProjection()` 之前先调 `RemoteAssistService.instance?.startMpRecording()`，激活 TouchRecordOverlay 拦截触摸坐标。
+
+### RemoteAssistService API 注意事项
+- `getInstance()` 是错误的调用方式，正确的是 `instance` 属性（Kotlin object 单例的 @JvmStatic companion 属性）
+
+- 用 `RemoteAssistService.instance?.xxx()` 而非 `RemoteAssistService.getInstance()?.xxx()`
+
+### 修复后的完整流程
+1. 点"允许" → 录制引导弹窗
+2. 点"好的，开始" → **先启动录制(Overlay激活)** → 再弹出 MediaProjection 系统弹窗
+3. 用户操作弹窗 → Overlay 拦截每次触摸坐标 → 录进 recordedSteps
+4. 授权成功 → `onActivityResult` → 保存录制
+
+## 00:07 自动回放触发 + 录制状态 Toast 提示
+
+### 3处改动
+
+**1. 恢复自动回放触发**（`RemoteAssistService.onAccessibilityEvent`）
+- 检测到 `TYPE_WINDOW_STATE_CHANGED` + 权限弹窗存在 + 有录制 + 未禁用 → 自动调 `tryAutoHandle()`
+
+**2. `startPermissionFlow()` 区分首次/回放**
+- **有录制** → 直接 `requestMediaProjection()`，不弹引导框，AccessibilityService 自动回放
+- **有录制但被禁用** → 提示"自动授权已禁用，请重新录制"，进录制流程
+- **无录制** → 正常录制引导
+
+**3. 录制状态 Toast 提示**
+- 录制开始："🎬 录制中..."
+- 录制成功："✅ 录制完成！共 X 步，下次自动完成"
+- 录制失败："⚠️ 未录制到操作，请重试"
+
+## 00:14 录制永不结束 + Toast 不显示修复
+
+### Bug1: 录制永不结束，手机卡住
+- **根因**: 首次录制流程里，弹系统弹窗后没有显示 `showLoading()`（含"完成录制"按钮）。用户操作完弹窗直接进 `startScreenCapture()`，TouchRecordOverlay 一直没关，持续拦截所有触摸导致手机卡。
+- **修复**: 弹系统弹窗后立即调 `showLoading()`，让用户看到"完成录制"按钮
+- **兜底**: `onActivityResult` 成功/失败都先调 `stopMpRecording()` 关 Overlay
+
+### Bug2: Toast 不显示
+- **根因**: AccessibilityService 的回调不在主线程，`Toast.makeText().show()` 静默失败。
+- **修复**: 所有 Toast 包在 `handler.post { }` 里
+
+## 00:20 saveRecording() 未重置 KEY_AUTO_DISABLED 导致二次回放仍被禁用
+
+### Bug: 重新录制成功后，第二次触发仍走"自动授权已禁用"分支
+- **根因**: `PermissionRecordManager.saveRecording()` 保存新录制时没有重置 `KEY_AUTO_DISABLED` 和 `KEY_REPLAY_FAIL_COUNT`。
+- **修复**: 在 `saveRecording()` 成功后追加清除这两个 key
+- Git 已提交: `c44e5ffac refactor: 彻底删除所有自动点击逻辑`
+
+### HyperOS 两步弹窗结构（已验证）
+1. 「要开始使用跌倒宝录制或投放吗？」→ 点 `android:id/button1`（下一步）
+2. 「选择要分享的应用」→ 点「跌倒宝」应用图标（content-desc 含「跌倒宝」）
+
+## 00:30 录制坐标误录修复 + 取消自动禁用
+
+### Bug: 录到的坐标全是 App UI 点击，不是弹窗按钮
+- **根因**: TouchRecordOverlay 在 `requestMediaProjection()` 之前就开始录制，用户点"好的，开始"按钮的触摸被录进去
+- **K70 屏幕分辨率**: 1440×3200
+
+### Fix 1: 录制忽略前1秒触摸
+- `recordTouchCoord()` 加 1000ms 冷启动期
+
+### Fix 2: 取消自动禁用
+- 删除回放失败自动禁用逻辑，允许无限重试
+- `tryAutoHandle()` 失败只 log 不禁用
+
+## 00:39 SettingsFragment 录制状态读错 key
+
+### Bug: 设置页永远显示"未录制"，清除录制也清错 key
+- **根因**: v9 改了 SharedPreferences key 名，但 SettingsFragment 没同步
+  - 设置页读的 key: `recorded_coords`（旧版 v9 之前的 key）
+  - PermissionRecordManager 实际写的 key: `recorded_steps_v9`（v9 改了 key 名）
+  - 设置页读失败次数 key: `fail_count`
+  - PermissionRecordManager 实际 key: `replay_fail_count`
+- **修复**: SettingsFragment 的 `updatePermissionRecordStatus()` 和 `showReRecordPermissionDialog()` 读取和清除都要用 PermissionRecordManager 的常量 key
+
+## 00:53 回放逻辑修复（步骤乱序 + 太快不等人 + 回放完卡卡的）
+
+### Bug1: 步骤乱序，AOSP 快速通道和录制回放重复点击
+- **根因**: 有录制数据时，AOSP 快速通道先点 button1，然后录制回放又把 button1 那步再点一遍
+- **修复**: 有录制数据时**跳过 AOSP**，只走录制回放，步骤不会重复
+
+### Bug2: 回放太快，弹窗没刷新就点下一步
+- **根因**: 之前固定 1s 延时就点下一步，弹窗可能还没渲染完
+- **修复**: 点击后先等 1.5s（让系统处理动画），然后轮询检查窗口数量是否变化（弹窗切换 = 新弹窗出来了），检测到变化后再等 500ms 让新弹窗渲染完 → 继续下一步，超时 3s 兜底
+
+### Bug3: 回放完卡卡的，状态没清理
+- **根因**: 回放结束（成功或失败）时没有清理所有残留的 Runnable 和 `isReplaying` 标志
+- **修复**: 在 `onReplaySuccess` 和 `onReplayFailed` 中清理 `dialogWaitRunnable` 和所有 handler callbacks
+
+## 09:13 v14 回放成功后倒计时卡住 — 广播机制修复
+
+### Bug: 回放成功后 RemoteAssistActivity 倒计时继续，不进入协助界面
+- **根因**: `PermissionRecordManager` 运行在 AccessibilityService（独立进程），无法直接调用 Activity 方法。回放成功后 Activity 不知道，30秒倒计时继续跑
+- **解决方案**: 广播机制
+  ```
+  PermissionRecordManager.onReplaySuccess()
+    → sendBroadcast(ACTION_AUTO_PERMISSION_GRANTED)
+        ↓
+  RemoteAssistActivity.registerAutoPermissionReceiver()
+    → 收到广播 → cancel countdown → startScreenCapture()
+  ```
+
+### 同修: getDialogSignature() 对 HyperOS 弹窗失效
+- **根因**: `getDialogSignature()` 依赖 `window.title` 关键词，但 HyperOS MediaProjection 弹窗属于 `com.android.systemui`，`window.title` 永远为 null
+- **修复**: 过滤前先用 `hasPermissionDialog()` 扫描节点确认是权限弹窗，再用节点内容（alertTitle + button1Text）生成签名
+
+### 状态
+- ✅ 编译通过 + 安装成功
+- ✅ Git commit: `1de1d5b08`
+- ❌ 用户反馈：倒计时还是卡，步骤2/3还是失败，回放后手机卡
+
+## 09:35 v14 测试反馈 — 三个问题
+
+### 用户反馈
+1. 还没点"允许"，倒计时就卡卡的
+2. 点了"允许"后第一步成功，第2、3步没成功
+3. 成功之后手机还贼卡，估计还在回放
+
+### 根因分析
+- `hasPermissionDialog()` 每次窗口变化都全量扫描所有窗口+所有关键词做 findAccessibilityNodeInfosByText，主线程阻塞导致倒计时卡顿
+- `getDialogSignature()` 有 bug：循环内调全局 `hasPermissionDialog()`（不是检查单个窗口 w），只要有一个窗口命中就 return true，导致签名无法区分不同弹窗
+- `dialogWaitRunnable` 每 300ms 轮询一次，每次都做全窗口扫描+节点遍历
+- `cleanupReplayState()` 只移除单个 runnable，轮询自引用还在跑
+- 广播接收器和 `onActivityResult` 都可能触发 `startScreenCapture()`
+
+## 09:57 v15 彻底修复 — 去轮询，用固定延时+防抖
+
+### 修复1：hasPermissionDialog() 500ms 防抖
+- `private var lastDialogCheckTime = 0L`
+- 在 `hasPermissionDialog()` 入口处：如果 `System.currentTimeMillis() - lastDialogCheckTime < 500`，返回 `lastDialogCheckResult`
+- 跳过全量扫描，直接返回缓存结果
+
+### 修复2：waitForDialogChangeAndReplay 简化为固定延时
+- 删除整个 `dialogWaitRunnable`、`preClickDialogSig`、`preClickWindowCount`、`dialogWaitStartTime` 等复杂逻辑
+- 删除 `getDialogSignature()` 函数（v13/v14 添加的，v15 不再需要）
+- 新逻辑：点击后 `handler.postDelayed(replayNextStep, 2000L)`
+- 回放最后一步后 `handler.postDelayed({ onReplaySuccess() }, 500L)` 等弹窗关闭
+
+### 修复3：cleanupReplayState 彻底清理
+- `handler.removeCallbacksAndMessages(null)` 替代只移除单个 `dialogWaitRunnable`
+
+### 修复4：广播接收器防重复
+- `permissionHandled` 标志，`startScreenCapture()` 只执行一次
+
+### 修复5：统一广播入口
+- `onActivityResult` 里也发广播（统一入口，不管权限来源是用户手动还是自动回放）
+
+### 状态
+- ✅ 编译通过 + 安装成功
+- ✅ Git commit: `ebc1933c3`
+- ❌ v15 用户反馈：问题依旧（说明防抖500ms + 去掉轮询还不够）
+
+## 10:07 v16 三问题根因重新定位 + 彻底修复
+
+### 用户反馈不变：倒计时卡、步骤2/3失败、回放后手机卡
+
+### v16 根因重新定位
+
+**问题1：倒计时卡（还没点允许就卡）**
+- **根因**：`TYPE_WINDOWS_CHANGED` 事件极频繁（Android 每帧窗口变化都触发），即使 500ms 防抖，每秒也触发 2 次全窗口节点扫描
+- **修复1**：去掉 `AccessibilityEvent.TYPE_WINDOWS_CHANGED`，只保留 `TYPE_WINDOW_STATE_CHANGED`
+- **修复2**：防抖 500ms → 2000ms，倒计时阶段每秒只有 1-2 次窗口事件，2s 防抖意味着大多数事件直接返回缓存
+
+**问题2：步骤2/3失败**
+- **根因**：`waitForDialogChangeAndReplay` 固定等 2s 后检查弹窗是否消失。HyperOS 弹窗切换有动画（A 关→B 开约 1.5-2s），2s 检查时若弹窗 B 还没渲染完，检测到"弹窗消失"就提前调用 `onReplaySuccess()`
+- **修复**：2s 后开始轮询，每 1s 检查一次，最多等 6s，等弹窗真正消失才成功
+
+**问题3：回放后手机卡**
+- **根因**：回放结束后 `cleanupReplayState()` 清了 handler，但 `onAccessibilityEvent` 继续触发，`hasPermissionDialog()` 仍在每帧扫描
+- **修复**：回放期间（`isReplaying=true`）直接跳过 `hasPermissionDialog()` 检测，完全不扫描
+
+### 状态
+- ✅ 编译通过 + 安装成功
+- ✅ Git commit: `97f4fb4b4`
+- ⏳ 待 K70 实机测试
+
+### 10:59  -  Android无障碍服务调试
+
+- 分析了AccessibilityService在倒计时阶段卡顿的根因：hasPermissionDialog()误将RemoteAssistActivity自身的"允许"按钮识别为权限弹窗，触发错误回放，dispatchGestureClick()的CountDownLatch.await(2s)阻塞主线程导致卡顿
+- 定位到三个关联问题：1)倒计时卡顿（主线程被阻塞）2)步骤2/3失败（误触导致坐标错误）3)回放后持续卡顿（误报→回放→失败的无限循环）
+- 提出修复方案：过滤应用自身窗口避免误报、将dispatchGestureClick改为异步执行不阻塞主线程、修复后消除错误回放循环
+# 2026-05-10 Daily Memory
+
+## v9-v16 远程协助权限录制回放系统迭代（去重整理）
+
+### 核心架构
+- **PermissionRecordManager.kt** — 录制/回放核心，管理录制步骤、回放流程、弹窗检测
+- **RemoteAssistService.kt** — AccessibilityService，检测弹窗事件，触发自动回放
+- **RemoteAssistActivity.kt** — 远程协助 UI，倒计时、请求权限、接收广播启动屏幕共享
+- **TouchRecordOverlay.kt** — 透明悬浮层，拦截真实触摸坐标用于录制
+
+### HyperOS 两步弹窗结构（已验证）
+1. 「要开始使用跌倒宝录制或投放吗？」→ 点 `android:id/button1`（下一步）
+2. 「选择要分享的应用」→ 点「跌倒宝」应用图标（content-desc 含「跌倒宝」）
+
+### RemoteAssistService API 注意事项
+- 用 `RemoteAssistService.instance` 而非 `getInstance()`（Kotlin object 单例的 @JvmStatic companion 属性）
+
+### 已修复 Bug 列表（v9-v15）
+
+| 版本 | Bug | 根因 | 修复 |
+|------|-----|------|------|
+| v9 | TouchRecordOverlay 未激活，录制为空 | requestMediaProjection 前没调 startMpRecording | 先激活 Overlay 再弹系统弹窗 |
+| v9 | Toast 不显示 | AccessibilityService 回调不在主线程 | 所有 Toast 包 handler.post {} |
+| v10 | saveRecording() 未重置 KEY_AUTO_DISABLED | 保存新录制不清除旧禁用标志 | 成功后 remove(KEY_AUTO_DISABLED) + remove(KEY_REPLAY_FAIL_COUNT) |
+| v11 | 录制坐标全是 App UI 点击 | 录制启动太早，"好的开始"按钮被误录 | 录制忽略前 1 秒触摸 (RECORDING_IGNORE_MS=1000) |
+| v11 | 回放失败自动禁用太激进 | 3次失败永久禁用 | 取消自动禁用，允许无限重试 |
+| v12 | AOSP 快速通道和录制回放重复点击 | 有录制时两种路径都执行 | 有录制时跳过 AOSP 快速通道 |
+| v13 | getDialogSignature() 对 HyperOS 失效 | HyperOS 弹窗 window.title 永远为 null | 改用节点内容生成签名 |
+| v14 | 回放成功后 Activity 不知道 | 进程隔离，Service 无法直接调 Activity | 广播机制 ACTION_AUTO_PERMISSION_GRANTED |
+| v15 | 签名轮询阻塞主线程+检测不准 | dialogWaitRunnable 每300ms全窗口扫描 | 删除轮询，改为固定2s延时 |
+
+### v16 三个持续问题（用户反馈 v14-v16 均未解决）
+
+1. **倒计时卡**：还没点"允许"就卡
+2. **步骤2/3失败**：点"允许"后第1步成功，2/3步失败
+3. **回放后手机卡**：疑似回放没关
+
+### v16 修复尝试（未生效）
+- 去掉 TYPE_WINDOWS_CHANGED 只保留 TYPE_WINDOW_STATE_CHANGED
+- 防抖 500ms → 2000ms
+- 回放期间 isReplaying=true 跳过 hasPermissionDialog 检测
+- waitForDialogChangeAndReplay 改固定2s延时后轮询
+- Git commit: `97f4fb4b4`
+
+### 🔑 v17 关键发现：hasPermissionDialogByText() 误报（根因定位）
+
+**核心误报 Bug**：`hasPermissionDialogByText()` 扫描所有窗口的节点找 BUTTON_TEXT_KEYWORDS（"允许","取消","开始"等），但 **RemoteAssistActivity 自身的 UI 就包含"允许"和"取消"按钮**，扫描到应用自身窗口时误判为权限弹窗。
+
+**三个问题的统一因果链**：
+1. **倒计时卡**：误报 → `tryAutoHandle()` → `dispatchGestureClick()` → `CountDownLatch.await(2, TimeUnit.SECONDS)` 阻塞主线程 2 秒
+2. **步骤2/3失败**：步骤1坐标是录制时 MediaProjection 弹窗的坐标，但当前屏幕是 RemoteAssistActivity，点击无效；即使第1步偶然成功，`waitForDialogChangeAndReplay()` 检测到弹窗消失就调 `onReplaySuccess()` 跳过剩余步骤
+3. **回放后手机卡**：`onReplayFailed()` 后 `isReplaying=false`，`onAccessibilityEvent` 继续触发，误报循环 → 每次循环阻塞主线程 2 秒
+
+**补充发现**：
+- `hasPermissionDialogByText()` 中用 `window.root?.packageName` 取包名，但 root 是节点树根节点，其 packageName 可能是被捕获的应用而非窗口本身的包名。应改用 `window.packageName`（AccessibilityWindowInfo 的字段）
+- 进程隔离推论修正：AccessibilityService 与 Activity 虽不同进程，但 Service 的 `onAccessibilityEvent` 主线程阻塞确实影响 UI（同一进程组件共享主线程），dispatchGestureClick 内的 latch.await() 阻塞 Service 主线程是倒计时卡顿的直接原因
+
+### v17 修复方案（待实施）
+
+**修复1：过滤应用自身窗口（核心）**
+- `hasPermissionDialogByText()` 循环开头加 `if (pkgName == service.packageName) continue`
+- 避免扫描到 RemoteAssistActivity 的"允许"/"取消"按钮
+
+**修复2：dispatchGestureClick 异步化**
+- 去掉 `CountDownLatch.await(2, TimeUnit.SECONDS)`
+- 改为 `service.dispatchGesture(gesture, null, null)` 异步执行不等待结果
+- 消除主线程阻塞
+
+**修复3：修复 window.packageName 取值**
+- `hasPermissionDialogByText()` 中用 `window.packageName` 替代 `window.root?.packageName`
+
+**修复4（可选）：onReplayFailed 冷却期**
+- 修复误报后循环问题自然解决
+- 备选方案：回放失败后加冷却期防止立即重试
+
+### 关键常量
+- REPLAY_STEP_DELAY_MS = 1500 → 固定2s
+- RECORDING_IGNORE_MS = 1000L
+- DIALOG_CHECK_DEBOUNCE_MS = 2000L
+- BUTTON_TEXT_KEYWORDS = ["立即开始","允许","Start","开始","确定","Allow","recording","share","capture","投射","共享","下一步","取消"]
+
+### 关键数据结构
+```kotlin
+data class RecordedStep(
+    val nodeDesc: String,
+    val nodeId: String,       // viewIdResourceName
+    val nodeBounds: String,   // boundsInScreen.toString()
+    val centerX: Int,         // 节点中心X坐标(用于 dispatchGesture 回放)
+    val centerY: Int,         // 节点中心Y坐标(用于 dispatchGesture 回放)
+    val action: String,       // "CLICK"
+    val stepIndex: Int,
+    val recordingVersion: Int = CURRENT_RECORDING_VERSION
+)
+data class Recording(
+    val steps: List<RecordedStep>,
+    val deviceModel: String,
+    val androidVersion: String,
+    val recordedAt: Long,
+    val recordingVersion: Int = CURRENT_RECORDING_VERSION
+)
+```
+
+### 关键文件路径
+- `projects/fall-detection-app/app/src/main/java/com/falldetector/diedaobao/assist/PermissionRecordManager.kt`
+- `projects/fall-detection-app/app/src/main/java/com/falldetector/diedaobao/assist/RemoteAssistService.kt`
+- `projects/fall-detection-app/app/src/main/java/com/falldetector/diedaobao/ui/RemoteAssistActivity.kt`
+
+### Git 提交记录
+- `c44e5ffac` refactor: 彻底删除所有自动点击逻辑
+- `32016b936` v12: dispatchGestureClick + waitForDialogChange
+- `1de1d5b08` v14: 广播机制 + getDialogSignature
+- `ebc1933c3` v15: 去轮询用固定延时+防抖
+- `97f4fb4b4` v16: 去TYPE_WINDOWS_CHANGED + 2s防抖 + 回放期间跳过检测
+
+### 当前状态
+- v16 已安装，三个问题未解决
+- v17 修复方案已定位（误报过滤 + 异步dispatchGesture），待实施
+
+
+## 12:21 PermissionRecordManager v17 极简重写 — 已编译安装
+
+### v16 三大问题的根因
+1. **倒计时卡**：`hasPermissionDialogByText()` 遍历所有窗口节点找"允许"文字 → 扫到 App 自身界面的"允许"按钮 → 误报为系统弹窗 → `CountDownLatch.await(2s)` 阻塞主线程 → 倒计时卡死
+2. **步骤2/3失败**：误报导致回放在错误时机触发；签名检测在 MIUI 上不可靠
+3. **回放后卡**：误报循环触发回放
+
+### v17 核心修复
+| 问题 | v17 修复 |
+|------|---------|
+| 误报 | `hasPermissionDialog()` 只检查 `com.android.systemui` 窗口，App自身窗口永不触发 |
+| 主线程阻塞 | `dispatchGestureClick()` 纯异步，不使用 CountDownLatch |
+| 循环回放 | 误报根除后循环自然消除；`isReplaying` 守卫防重入 |
+
+### 代码量变化
+- 删除 ~493 行复杂代码（签名轮询、AOSP快速通道、节点遍历、防抖缓存、失败计数、自动禁用等）
+- 替换为 ~200 行极简逻辑
+
+### 编译坑：AccessibilityWindowInfo.packageName 不存在
+- `AccessibilityWindowInfo` 没有 `packageName` 属性（它是 `AccessibilityNodeInfo` 的属性）
+- 必须用 `window.root?.packageName?.toString()` 获取窗口包名
+- 编译不报错但运行时需要注意 root 可能为 null
+
+### v17 回放流程（极简）
+1. 检测到 com.android.systemui 窗口 → 触发回放
+2. 按录制顺序 dispatchGesture 点击，每步间隔 2s
+3. 所有步骤完成后等 2s 检查弹窗是否消失
+4. 弹窗消失 → 成功；仍在 → 失败
+
+### Git 提交
+- 已 commit + 已安装到 K70
+
+### 待测试
+- 完整流程：子女端发请求 → 老人端点允许 → 倒计时是否流畅 → 自动授权是否成功
