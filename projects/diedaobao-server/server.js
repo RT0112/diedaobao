@@ -77,17 +77,17 @@ app.post('/fall-report', (req, res) => {
 
     db.prepare(`INSERT INTO fall_events (id, userId, timestamp, latitude, longitude, impactG, ffDuration, mlScore, physicalScore, status, createdAt)
       VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(id, userId, fallTs, latitude || null, longitude || null, impactG || 0, ffDuration || 0, mlScore || 0, physicalScore || 0, 'pending', Date.now())
+      .run(id, userId, fallTs, latitude ?? null, longitude ?? null, impactG ?? 0, ffDuration ?? 0, mlScore ?? 0, physicalScore ?? 0, 'pending', Date.now())
 
     // 写入 lastFallEvent 到 users 表
-    const lastFallEvent = JSON.stringify({ eventId: id, timestamp: fallTs, impactG: impactG || 0, mlScore: mlScore || 0, latitude: latitude || null, longitude: longitude || null })
+    const lastFallEvent = JSON.stringify({ eventId: id, timestamp: fallTs, impactG: impactG ?? 0, mlScore: mlScore ?? 0, latitude: latitude ?? null, longitude: longitude ?? null })
     db.prepare('UPDATE users SET lastFallEvent=?, updatedAt=? WHERE id=?').run(lastFallEvent, Date.now(), userId)
 
     // 获取绑定的家属数量
     const bindings = db.prepare("SELECT id, familyId FROM family_bindings WHERE elderId=? AND status='active'").all(userId)
 
     // v24: WS 实时推送跌倒事件给子女端
-    const fallData = { eventId: id, timestamp: fallTs, impactG: impactG || 0, mlScore: mlScore || 0, latitude: latitude || null, longitude: longitude || null }
+    const fallData = { eventId: id, timestamp: fallTs, impactG: impactG ?? 0, mlScore: mlScore ?? 0, latitude: latitude ?? null, longitude: longitude ?? null }
     // 优先用 pushToRoom（依赖rooms），同时直接查库推送（防止rooms未初始化）
     let wsPushed = pushToRoom(userId, { type: 'fall_event', data: fallData })
     // 如果 pushToRoom 推送失败（rooms为空），直接查库推送
