@@ -4,8 +4,11 @@
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">localhost</domain>
         <domain includeSubdomains="true">127.0.0.1</domain>
-        <domain includeSubdomains="true">10.0.0.0</domain>
-        <domain includeSubdomains="true">192.168.0.0</domain>
+        <!-- K70局域网IP（具体IP，CIDR网段不生效） -->
+        <domain includeSubdomains="false">192.168.4.19</domain>
+        <!-- 通用局域网网段（逐段添加） -->
+        <domain includeSubdomains="false">192.168.0.0</domain>
+        <domain includeSubdomains="false">10.0.0.0</domain>
     </domain-config>
     <!-- 允许Cloudflare Tunnel内网穿透域名 -->
     <domain-config cleartextTrafficPermitted="false">

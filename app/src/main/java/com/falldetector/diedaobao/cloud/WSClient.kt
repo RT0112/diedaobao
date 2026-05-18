@@ -31,7 +31,7 @@ object WSClient {
     
     // WebSocket 服务器地址（K70 本地）
     // 注意：老人端跑在 K70 上，连 localhost:3000
-    private const val WS_URL = "ws://localhost:3000/ws"
+    private const val WS_URL = "wss://clerk-anything-adopt-lately.trycloudflare.com/ws"
     
     // 重连配置
     private const val RECONNECT_DELAY_MS = 3000L

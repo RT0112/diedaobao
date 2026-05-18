@@ -21,8 +21,8 @@ import kotlinx.coroutines.TimeoutCancellationException
 object CloudBaseClient {
     private const val TAG = "CloudBaseClient"
     
-    // K70本地服务器直连（服务器跑在K70上，零延迟）
-    private const val BASE_URL = "http://localhost:3000"
+    // 外网地址（双端均外网使用）
+    private const val BASE_URL = "https://clerk-anything-adopt-lately.trycloudflare.com"
     
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
@@ -162,28 +162,34 @@ object CloudBaseClient {
         }
         
         if (userId == null) {
-            AppLogger.w(TAG, "未注册，跳过上报")
+            Log.e(TAG, "❌ reportFall: userId为null！cachedUserId=$cachedUserId, 未注册，跳过上报")
             return false
         }
+        Log.w(TAG, "📡 reportFall: userId=$userId, lat=$latitude, lng=$longitude, impactG=$impactG, mlScore=$mlScore")
         
         val body = JSONObject().apply {
             put("userId", userId)
-            put("latitude", latitude)
-            put("longitude", longitude)
-            put("impactG", impactG)
+            // v0.46: 0.0 表示未获取到位置，不传或传null，避免子女端显示"0.0000, 0.0000"
+            if (latitude != 0.0 && longitude != 0.0) {
+                put("latitude", latitude)
+                put("longitude", longitude)
+            }
+            put("impactG", impactG.toDouble())
             put("ffDuration", ffDuration)
-            put("mlScore", mlScore)
-            put("physicalScore", physicalScore)
+            put("mlScore", mlScore.toDouble())
+            put("physicalScore", physicalScore.toDouble())
             put("timestamp", System.currentTimeMillis())
         }
         
+        Log.w(TAG, "📡 reportFall: 请求体=${body.toString().take(200)}")
         return try {
             val response = callFunction("fall-report", body)
+            Log.w(TAG, "📡 reportFall: 响应=${response?.toString()?.take(200) ?: "null"}")
             val success = response != null && response.optString("eventId").isNotEmpty()
-            Log.i(TAG, "跌倒上报: $success")
+            Log.w(TAG, "📡 reportFall: 最终结果=$success")
             success
         } catch (e: Exception) {
-            AppLogger.e(TAG, "跌倒上报异常: ${e.message}")
+            Log.e(TAG, "❌ reportFall异常: ${e.javaClass.simpleName}: ${e.message}")
             false
         }
     }
@@ -523,6 +529,7 @@ object CloudBaseClient {
      */
     private suspend fun callFunction(functionName: String, body: JSONObject): JSONObject? {
         val url = "$BASE_URL/$functionName"
+        Log.d(TAG, "🌐 callFunction: POST $url")
         val request = Request.Builder()
             .url(url)
             .post(body.toString().toRequestBody(jsonMediaType))
@@ -531,20 +538,21 @@ object CloudBaseClient {
         return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val response = client.newCall(request).execute()
+                Log.d(TAG, "🌐 callFunction: $functionName → HTTP ${response.code}")
                 if (response.isSuccessful) {
                     val responseBody = response.body?.string()
                     if (responseBody != null) {
                         JSONObject(responseBody)
                     } else {
-                        AppLogger.e(TAG, "响应体为空")
+                        Log.e(TAG, "🌐 callFunction: 响应体为空")
                         null
                     }
                 } else {
-                    AppLogger.e(TAG, "调用失败: $functionName → ${response.code} ${response.message}")
+                    Log.e(TAG, "🌐 callFunction: $functionName → ${response.code} ${response.message}")
                     null
                 }
             } catch (e: IOException) {
-                AppLogger.e(TAG, "网络异常: $functionName → ${e.message}")
+                Log.e(TAG, "🌐 callFunction: 网络异常 $functionName → ${e.javaClass.simpleName}: ${e.message}")
                 null
             }
         }

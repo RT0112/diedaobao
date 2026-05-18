@@ -54,7 +54,7 @@ class ScreenCaptureService : Service() {
         const val EXTRA_ELDER_ID = "elder_id"
         const val EXTRA_GUARDIAN_ID = "guardian_id"
 
-        private const val BASE_URL = "http://192.168.4.19:3000"
+        private const val BASE_URL = "https://clerk-anything-adopt-lately.trycloudflare.com"
 
         // MIUI/HyperOS 兼容：用绑定方式而非前台服务
         var isRunning = false
@@ -606,8 +606,10 @@ class ScreenCaptureService : Service() {
      * 异步上传帧（使用单线程线程池，避免每帧创建 HandlerThread 导致线程泄漏）
      */
     private fun uploadFrameAsync(b64: String, frameNum: Int, w: Int, h: Int) {
+        val wsOk = com.falldetector.diedaobao.cloud.WSClient.isWSConnected()
+        Log.i(TAG, "uploadFrameAsync[#$frameNum]: start, wsConnected=$wsOk, guardianId=$guardianId")
         // WS 优先发送帧（低延迟、无HTTP开销）
-        if (com.falldetector.diedaobao.cloud.WSClient.isWSConnected()) {
+        if (wsOk) {
             val gid = guardianId ?: elderId ?: ""
             com.falldetector.diedaobao.cloud.WSClient.pushAssistFrame(gid, b64, w, h, frameNum)
             uploadFailCount = 0
@@ -745,31 +747,47 @@ class ScreenCaptureService : Service() {
         try {
             thread(name = "NotifyReady") {
                 try {
-                val url = URL(SIGNAL_URL)
-                val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.doOutput = true
-                conn.connectTimeout = 5000
-                conn.readTimeout = 5000
+                    val url = URL(SIGNAL_URL)
+                    val conn = url.openConnection() as HttpURLConnection
+                    conn.requestMethod = "POST"
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    conn.doOutput = true
+                    conn.connectTimeout = 5000
+                    conn.readTimeout = 5000
 
-                val body = org.json.JSONObject().apply {
-                    put("action", "screen_ready")
-                    put("userId", elderId)
-                    put("width", screenWidth)
-                    put("height", screenHeight)
-                }
-                conn.outputStream.write(body.toString().toByteArray(Charsets.UTF_8))
-                    val resp = conn.inputStream.bufferedReader().readText()
-                    Log.i(TAG, "screen_ready: resp=$resp")
+                    val body = org.json.JSONObject().apply {
+                        put("action", "screen_ready")
+                        put("userId", elderId)
+                        put("width", screenWidth)
+                        put("height", screenHeight)
+                    }
+                    conn.outputStream.write(body.toString().toByteArray(Charsets.UTF_8))
+                    conn.outputStream.flush()
+                    conn.outputStream.close()
+                    
+                    val code = conn.responseCode
+                    val resp = try {
+                        if (code in 200..299) conn.inputStream.bufferedReader().readText()
+                        else conn.errorStream?.bufferedReader()?.readText() ?: "HTTP $code"
+                    } catch (e: Exception) { "read error: ${e.message}" }
+                    
+                    if (code in 200..299) {
+                        Log.i(TAG, "screen_ready 成功: $resp")
+                        AppLogger.i(TAG, "[screen_ready] 成功通知云端: $resp")
+                    } else {
+                        Log.e(TAG, "screen_ready 失败: HTTP $code, resp=$resp")
+                        AppLogger.e(TAG, "screen_ready 失败: HTTP $code")
+                    }
                 } catch (e: Exception) {
-                    Log.e(TAG, "screen_ready网络请求异常: ${e.message}")
+                    Log.e(TAG, "screen_ready 连接异常: ${e.javaClass.simpleName}: ${e.message}")
+                    AppLogger.e(TAG, "screen_ready 连接异常: ${e.message}")
                 }
             }
         } catch (e: Exception) {
-            AppLogger.e(TAG, "screen_ready异常: ${e.message}")
+            AppLogger.e(TAG, "screen_ready 启动线程失败: ${e.message}")
         }
     }
+
 
     private fun updateState(state: State, message: String?) {
         currentState = state

@@ -27,7 +27,7 @@ import javax.net.ssl.HttpsURLConnection
 object LogUploader : Thread.UncaughtExceptionHandler {
 
     private const val TAG = "LogUploader"
-    private const val UPLOAD_URL = "https://scheduling-researchers-discuss-compatible.trycloudflare.com/upload-log"
+    private const val UPLOAD_URL = "https://clerk-anything-adopt-lately.trycloudflare.com/upload-log"
     
     // 本地缓存文件名（崩溃时先写本地，异步上传）
     private const val CACHE_FILE = "error_log_cache.txt"

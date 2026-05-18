@@ -27,7 +27,7 @@ object DetectionConfig {
     const val DEFAULT_FF_TIME        = 200    // ms — 失重时间要求
     const val DEFAULT_FF_QUALITY     = 0.08f  // 失重质量
     const val DEFAULT_VELOCITY_MIN    = 0.8f   // m/s
-    const val DEFAULT_IMPACT_MIN     = 3.0f   // g — 冲击峰值（硬编码）
+    const val DEFAULT_IMPACT_MIN     = 3.0f   // g — 冲击峰值
     const val DEFAULT_WAIT_MS        = 300    // ms
     
     // 硬编码常量（不受灵敏度影响）
@@ -112,7 +112,7 @@ object DetectionConfig {
     // 等级 4 = 默认推荐（ffTime=200ms）
     // 等级 8 = 最宽松（ffTime=150ms, 阈值最宽）
     private const val KEY_SENSITIVITY_LEVEL = "sensitivity_level"
-    const val DEFAULT_SENSITIVITY_LEVEL = 4  // 默认 = 中等
+    const val DEFAULT_SENSITIVITY_LEVEL = 4  // 默认推荐等级
 
     @Volatile var sensitivityLevel = DEFAULT_SENSITIVITY_LEVEL
 

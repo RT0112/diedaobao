@@ -271,6 +271,11 @@ class FallDetectionService : Service() {
                                     putExtra("phys_score", result.physScore)
                                     putExtra("impact_g", result.impactG)
                                     putExtra("fall_height", result.fallHeight)
+                                    // v0.46: 传入服务已知的最新位置，避免ConfirmActivity取不到GPS
+                                    lastGoodLocation?.let { loc ->
+                                        putExtra("latitude", loc.latitude)
+                                        putExtra("longitude", loc.longitude)
+                                    }
                                 }
                                 startActivity(confirmIntent)
                             } catch (e: Exception) {

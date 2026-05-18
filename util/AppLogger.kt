@@ -31,7 +31,7 @@ import javax.net.ssl.HttpsURLConnection
 object AppLogger {
 
     private const val TAG = "AppLogger"
-    private const val UPLOAD_URL = "https://scheduling-researchers-discuss-compatible.trycloudflare.com/upload-log"
+    private const val UPLOAD_URL = "http://192.168.4.19:3000/upload-log"
 
     // 哪些级别要上传云端
     private val UPLOAD_LEVELS = setOf("ERROR", "WARN", "CRASH")

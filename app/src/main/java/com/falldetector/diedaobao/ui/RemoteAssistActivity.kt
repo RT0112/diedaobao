@@ -254,15 +254,15 @@ class RemoteAssistActivity : AppCompatActivity() {
         val previousGuardianId = guardianId
         val lastHandled = getLastHandledFromId()
         
-        // v23: 先检测重复请求，再cleanup — 避免cleanup重置状态后误判
-        // 场景1: 有活跃会话 + 同一guardian重复请求（WS+HTTP双推）
+        // v27: 先检测重复请求，再cleanup — 避免cleanup重置状态后误判
+        // 场景1: 有活跃会话 + 同一guardian重复请求 → 顶掉旧会话，继续处理（兜底机制）
         if (hadActiveSession && previousGuardianId == newFromId && newFromId.isNotEmpty()) {
-            Log.i(TAG, "handleNewRequest: 同一监护人重复请求(活跃会话)，忽略")
-            return false
+            Log.w(TAG, "handleNewRequest: 同一监护人重复请求(活跃会话)，顶掉旧会话重新处理")
+            // 不return，继续执行cleanupAssist()后处理新请求
         }
-        // 场景2: 无活跃会话 + from_id与上次相同（WS+HTTP双推或Activity重建）
+        // 场景2: 无活跃会话 + from_id与上次相同（WS+HTTP双推或Activity重建）→ 忽略，避免重复弹窗
         if (!hadActiveSession && newFromId.isNotEmpty() && newFromId == lastHandled) {
-            Log.i(TAG, "handleNewRequest: 重复请求(from_id=$newFromId, lastHandled=$lastHandled)，忽略")
+            Log.i(TAG, "handleNewRequest: 重复请求(from_id=$newFromId)，忽略（无活跃会话）")
             return false
         }
         

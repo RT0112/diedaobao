@@ -36,6 +36,7 @@ class ConfirmActivity : AppCompatActivity() {
     private var countdownJob: Job? = null
     private var latitude = 0.0
     private var longitude = 0.0
+    private var hasLocationFromService = false  // v0.46: Service传来的位置更可靠
     private var vibrator: Vibrator? = null
     private var mediaPlayer: MediaPlayer? = null
 
@@ -95,6 +96,16 @@ class ConfirmActivity : AppCompatActivity() {
         impactG = intent.getFloatExtra("impact_g", 0f)
         fallHeight = intent.getFloatExtra("fall_height", 0f)
         postureAngle = if (postureFromIntent > 0f) postureFromIntent else estimatePostureFromPeak(peakAcc)
+
+        // v0.46: 优先使用FallDetectionService传来的位置（比onCreate里取getLastKnownLocation更可靠）
+        val latFromService = intent.getDoubleExtra("latitude", Double.NaN)
+        val lngFromService = intent.getDoubleExtra("longitude", Double.NaN)
+        if (!latFromService.isNaN() && !lngFromService.isNaN()) {
+            latitude = latFromService
+            longitude = lngFromService
+            hasLocationFromService = true
+            Log.i(TAG, "从Service获取位置: $latitude, $longitude")
+        }
 
         AppLogger.w(TAG, "===== ConfirmActivity 启动 =====")
         AppLogger.w(TAG, "冲击=${"%.2f".format(peakAcc)}g | 姿势=${"%.0f".format(postureAngle)}° | " +
@@ -225,10 +236,13 @@ class ConfirmActivity : AppCompatActivity() {
         stopAlarm()
 
         val alreadyNotified = intent.getBooleanExtra("notification_sent", false)
+        Log.w(TAG, "onCountdownFinished: alreadyNotified=$alreadyNotified, peakAcc=$peakAcc, impactG=$impactG, mlProbability=$mlProbability")
+        
         if (!alreadyNotified) {
             // v0.30.7: triggerEmergency 改为 suspend，用协程在 IO 线程执行
             //   根因：Room 主线程检查无法被 runBlocking 绕过，必须切到 IO 线程
             CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                Log.w(TAG, "onCountdownFinished: 开始执行EmergencyNotifier")
                 EmergencyNotifier.triggerEmergency(
                     context = this@ConfirmActivity,
                     latitude = latitude,
@@ -240,6 +254,7 @@ class ConfirmActivity : AppCompatActivity() {
                 )
                 
                 // v0.33.0: 上报到 CloudBase
+                Log.w(TAG, "onCountdownFinished: 开始执行CloudBaseClient.reportFall")
                 val reported = CloudBaseClient.reportFall(
                     context = this@ConfirmActivity,
                     latitude = latitude,
@@ -249,7 +264,7 @@ class ConfirmActivity : AppCompatActivity() {
                     mlScore = mlProbability,
                     physicalScore = physScore
                 )
-                Log.i(TAG, "CloudBase上报: $reported")
+                Log.w(TAG, "CloudBase上报结果: reported=$reported")
             }
             
             updateFallEvent(isFalsePositive = false, notificationSent = true)
@@ -378,6 +393,12 @@ class ConfirmActivity : AppCompatActivity() {
     }
 
     private fun getLocation() {
+        // v0.46: 如果FallDetectionService已传了位置，不再覆盖
+        if (hasLocationFromService) {
+            Log.i(TAG, "使用Service传来的位置: $latitude, $longitude")
+            return
+        }
+
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
             != PackageManager.PERMISSION_GRANTED) return
 

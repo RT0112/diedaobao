@@ -54,7 +54,7 @@ class ScreenCaptureService : Service() {
         const val EXTRA_ELDER_ID = "elder_id"
         const val EXTRA_GUARDIAN_ID = "guardian_id"
 
-        private const val BASE_URL = "https://scheduling-researchers-discuss-compatible.trycloudflare.com"
+        private const val BASE_URL = "http://192.168.4.19:3000"
 
         // MIUI/HyperOS 兼容：用绑定方式而非前台服务
         var isRunning = false
