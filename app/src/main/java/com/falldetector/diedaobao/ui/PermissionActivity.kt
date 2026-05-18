@@ -23,6 +23,7 @@ import com.google.android.material.card.MaterialCardView
 class PermissionActivity : AppCompatActivity() {
 
     private lateinit var permissionLauncher: ActivityResultLauncher<Array<String>>
+    private lateinit var bgLocationLauncher: ActivityResultLauncher<Array<String>>
 
     private data class PermissionItem(
         val name: String,
@@ -51,6 +52,22 @@ class PermissionActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         permissionLauncher = registerForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) { results ->
+            // 检查是否有后台定位需要单独请求（Android 11+ 不允许与前台定位一起请求）
+            val needBgLocation = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+                (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                 ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED)
+            if (needBgLocation) {
+                // 前台定位已授权，现在单独请求后台定位
+                bgLocationLauncher.launch(arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION))
+            } else {
+                refreshUI()
+            }
+        }
+
+        bgLocationLauncher = registerForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions()
         ) { _ ->
             refreshUI()
@@ -649,15 +666,29 @@ class PermissionActivity : AppCompatActivity() {
     }
 
     private fun requestAllPermissions() {
+        // Android 11+ 不允许后台定位与其他权限一起请求，必须单独请求
+        val bgLocationPerm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) Manifest.permission.ACCESS_BACKGROUND_LOCATION else null
         val missing = permissionItems
             .filter { ContextCompat.checkSelfPermission(this, it.permission) != PackageManager.PERMISSION_GRANTED }
             .map { it.permission }
+            .filter { it != bgLocationPerm }  // 后台定位单独处理
             .toTypedArray()
 
         if (missing.isNotEmpty()) {
             permissionLauncher.launch(missing)
         } else {
-            Toast.makeText(this, "运行时权限已授权", Toast.LENGTH_SHORT).show()
+            // 所有普通权限已授权，检查是否需要单独请求后台定位
+            if (bgLocationPerm != null && ContextCompat.checkSelfPermission(this, bgLocationPerm) != PackageManager.PERMISSION_GRANTED) {
+                // 必须先有前台定位权限才能请求后台定位
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                    ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                    bgLocationLauncher.launch(arrayOf(bgLocationPerm))
+                } else {
+                    Toast.makeText(this, "请先授权精确定位，再申请始终允许定位", Toast.LENGTH_LONG).show()
+                }
+            } else {
+                Toast.makeText(this, "运行时权限已授权", Toast.LENGTH_SHORT).show()
+            }
         }
 
         // 检查悬浮窗

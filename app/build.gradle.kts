@@ -12,7 +12,7 @@ android {
         applicationId = "com.falldetector.diedaobao"
         minSdk = 26
         targetSdk = 34
-        versionCode = 135
+        versionCode = 136
         versionName = "0.45.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

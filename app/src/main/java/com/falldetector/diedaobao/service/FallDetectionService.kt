@@ -888,11 +888,13 @@ class FallDetectionService : Service() {
     private suspend fun refreshFenceCache() {
         try {
             val fences = CloudBaseClient.getCachedFenceData(this@FallDetectionService)
-            if (fences.isNotEmpty()) {
-                cachedFences = fences
-                lastFenceRefreshTime = System.currentTimeMillis()
-                Log.i(TAG, "围栏缓存已刷新: ${fences.size}个围栏")
-            }
+            // 始终更新缓存（包括空列表），这样删除围栏后能立即生效
+            cachedFences = fences
+            lastFenceRefreshTime = System.currentTimeMillis()
+            // 清除已删除围栏的冷却记录
+            val activeIds = fences.map { it.id }.toSet()
+            fenceBreachCooldown.keys.retainAll(activeIds)
+            Log.i(TAG, "围栏缓存已刷新: ${fences.size}个围栏")
         } catch (e: Exception) {
             AppLogger.e(TAG, "围栏缓存刷新失败: ${e.message}")
         }
