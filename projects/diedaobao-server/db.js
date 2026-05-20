@@ -126,6 +126,21 @@ function initTables() {
     CREATE INDEX IF NOT EXISTS idx_screen_frames_elderId ON screen_frames(elderId);
     CREATE INDEX IF NOT EXISTS idx_logs_userId ON logs(userId);
     CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp);
+
+    CREATE TABLE IF NOT EXISTS feedback (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      contact TEXT,
+      content TEXT NOT NULL,
+      device_model TEXT,
+      android_version TEXT,
+      app_version TEXT,
+      platform TEXT NOT NULL DEFAULT 'unknown',
+      timestamp INTEGER NOT NULL,
+      date TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_feedback_timestamp ON feedback(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_feedback_platform ON feedback(platform);
   `)
 }
 

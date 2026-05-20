@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-05-17T05:47:44.924Z",
+  "updatedAt": "2026-05-19T04:49:46.043Z",
   "entries": {
     "memory:memory/2026-05-16.md:279:283": {
       "key": "memory:memory/2026-05-16.md:279:283",
@@ -1218,6 +1218,192 @@
         "fall",
         "detection",
         "app"
+      ]
+    },
+    "memory:memory/daily/2026-05-02.md:1186:1211": {
+      "key": "memory:memory/daily/2026-05-02.md:1186:1211",
+      "path": "memory/daily/2026-05-02.md",
+      "startLine": 1186,
+      "endLine": 1211,
+      "source": "memory",
+      "snippet": "- **`evalJs()` 静默错误是危险的**：JavaScript 函数不存在时 `evaluateJavascript` 不抛异常，只返回 null。没有 `onConsoleMessage` 或 `onReceivedError` 时完全不知道 JS 执行失败 - **每次\"修复\"后必须检查 diff 是否真的变更了目标文件**，不能只看编译通过和 commit message ## 22:12 — 围栏编辑按钮缺失修复 ✅ ### 用户反馈 \"编辑按钮都没看到\" + 要求列出改动点及测试入口。 ### 根因 `GeofenceFragment` 长按菜单只有两项：📍 在地图上查看、🗑 删除围栏。**编辑入口完全不存在。** 编辑代码虽然在 JS 层有 `editFence()`（点击地图上围栏圈触发），但 GeofenceFragment 没有任何方式把用户带到编辑页面。 ### 修复内容 #### GeofenceFragment.kt - 长按菜单新增首项：**✏️ 编辑围栏** - 新增 `openMapForEdit()` 方法：启动 MapActivity，传 mode=edit + fenceId, fenceName, fenceLat, fenceLng, fenceRadius #### MapActivity.kt - onCreate 新增 \"edit\" 模式处理：标题\"✏️ 编辑围栏\" - 新增 `setupEditMode()` 方法：从 Intent 读取围栏数据，调用 JS `setupEditableFence()` +",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1,
+      "maxScore": 1,
+      "firstRecalledAt": "2026-05-19T04:49:46.043Z",
+      "lastRecalledAt": "2026-05-19T04:49:46.043Z",
+      "queryHashes": [
+        "908e79f130e9"
+      ],
+      "recallDays": [
+        "2026-05-19"
+      ],
+      "conceptTags": [
+        "geofencefragment.kt",
+        "mapactivity.kt",
+        "evaljs",
+        "静默",
+        "错误",
+        "危险",
+        "javascript",
+        "函数"
+      ]
+    },
+    "memory:memory/daily/2026-04-24.md:194:230": {
+      "key": "memory:memory/daily/2026-04-24.md:194:230",
+      "path": "memory/daily/2026-04-24.md",
+      "startLine": 194,
+      "endLine": 230,
+      "source": "memory",
+      "snippet": "| 峰值捕获 | 保证捕获最大冲击 | 可能错过峰值时刻 | **验证数据**： - `extract_physics_peak_aligned.py` 测试了滑动窗口提取： - SisFall 第一个跌倒文件：file_max = **7.10g** - 2.5s 窗口的 window_max = 7.10g（峰值窗口） - **但 window_p50 = 0.98-1.83g**（大部分窗口不包含峰值） **结论**：v10 模型学会了\"峰值 > 5g = 跌倒\"，但真实推理时大部分窗口的峰值只有 1-2g。 --- ### 传感器利用不足 | 传感器 | 当前状态 | 可用价值 | |--------|---------|---------| | TYPE_ACCELEROMETER | ✅ 使用 | magnitude 特征 | | TYPE_GYROSCOPE | ❓ 传 0 | 完全未用 | | TYPE_GRAVITY | ❌ 未用 | **关键**：重力方向始终朝下，可提取位置无关方向特征 | | TYPE_LINEAR_ACCELERATION | ❌ 未用 | 去除重力后的纯运动信号 | | TYPE_ROTATION_VECTOR | ❌ 未用 | 姿态变化检测 | --- ### v11 完整方案设计 **核心改进**： 1. 重构训练数据：从 SisFall 原始数据用滑动窗口提取特征，保证训练/推理分布一致 2. 多传感器融合：充分利用重力传感器（gravity-relative 特征）、陀螺仪等 3. 特征扩展：6 维",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1,
+      "maxScore": 1,
+      "firstRecalledAt": "2026-05-19T04:49:46.043Z",
+      "lastRecalledAt": "2026-05-19T04:49:46.043Z",
+      "queryHashes": [
+        "908e79f130e9"
+      ],
+      "recallDays": [
+        "2026-05-19"
+      ],
+      "conceptTags": [
+        "extract-physics-peak-aligned.py",
+        "file-max",
+        "7.10g",
+        "2.5s",
+        "window-max",
+        "window-p50",
+        "0.98-1.83g",
+        "1-2g"
+      ]
+    },
+    "memory:memory/daily/2026-04-24.md:1:43": {
+      "key": "memory:memory/daily/2026-04-24.md:1:43",
+      "path": "memory/daily/2026-04-24.md",
+      "startLine": 1,
+      "endLine": 43,
+      "source": "memory",
+      "snippet": "--- ## 20:14 - ML 模型失效根因分析（核心发现） ### 分析过程 用户质疑 v0.9.7 加物理规则补丁是错误方向，要求分析 ML 为什么不准。 **步骤 1：特征提取对齐验证** 对比 Python (FeatureExtractor77) 和 Kotlin (FallDetectorML.kt) 的 80 维特征： - 时域特征 (0-32)：完全一致（< 1e-8） - 频域特征 (33-44)：~0.8% 差异（频率分辨率公式差） - 物理特征 (77-79)：完全一致 **结论：特征提取对齐没问题，问题在训练数据本身。** --- ### 核心发现：SisFall 数据的三个致命问题 **问题 1：传感器位置差异 — 方向性特征在手机上失效** | 特征 | Cohen d | 说明 | |------|---------|------| | `acc_y_mean` | 1.07 | 最强区分特征，但依赖传感器固定方向 | | `acc_y_energy` | 0.98 | Y轴能量，依赖方向 | | `roll_mean` | 0.82 | 姿态角，依赖手机朝向 | - SisFall：传感器固定在腰/胸部 → Y 轴方向一致 - 手机：位置不固定（口袋/手/包）→ Y 轴方向不可预测 - **模型学到的是\"Y 轴均值 < -0.6 就是跌倒\"，不是物理特征** **问题 2：加速度峰值区分度极低** - FALL `acc_mag_max` P50 = 1.41g，ADL P90 = 4.51g - Cohen d",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1,
+      "maxScore": 1,
+      "firstRecalledAt": "2026-05-19T04:49:46.043Z",
+      "lastRecalledAt": "2026-05-19T04:49:46.043Z",
+      "queryHashes": [
+        "908e79f130e9"
+      ],
+      "recallDays": [
+        "2026-05-19"
+      ],
+      "conceptTags": [
+        "v0.9.7",
+        "falldetectorml.kt",
+        "0-32",
+        "1e-8",
+        "33-44",
+        "0.8",
+        "77-79",
+        "acc-y-mean"
+      ]
+    },
+    "memory:memory/daily/2026-05-11.md:1009:1060": {
+      "key": "memory:memory/daily/2026-05-11.md:1009:1060",
+      "path": "memory/daily/2026-05-11.md",
+      "startLine": 1009,
+      "endLine": 1060,
+      "source": "memory",
+      "snippet": "| 监控告警 | 内存>70% warn | P1 | ### 需要修改的配置 - maxConcurrent: 3 → 2（防止并发太高） - 添加内存监控：80%自动重启 ### 快速可用的方案 crontab 每5分钟检查内存，>80%时自动重启OpenClaw ### 待用户确认 是否现在实施内存限制方案 ## 19:21 内存保护方案确定 ### Kill 优先级（内存>80%时） 优先级 进程 原因 ─────────────────────────────────────────────── 🔴 第1杀 QC apps (加速器相关) 不是必须，可重启 🟡 第2杀 浏览器 Chrome 内存大户，可重启 🟡 第3杀 微信 不是必须 🔴 最后 openclaw-gateway 核心，不杀 ### 白名单（不杀） - openclaw 相关 - UU 向日葵 - 系统核心进程 ### 实现方案 crontab 每5分钟检查内存，>80%按优先级杀进程 ### 待实现 内存保护监控脚本 ## 19:25 UU远程白名单确认+内存保护 ### UU远程进程确认 UURemote (0.4%) + UURemoteDaemon (0.1%) + UURemoteService (0.3%) 不是向日葵，不要搞错！ ### QClaw版本确认 当前用的是 QClaw 6，不是原版OpenClaw",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1,
+      "maxScore": 1,
+      "firstRecalledAt": "2026-05-19T04:49:46.043Z",
+      "lastRecalledAt": "2026-05-19T04:49:46.043Z",
+      "queryHashes": [
+        "908e79f130e9"
+      ],
+      "recallDays": [
+        "2026-05-19"
+      ],
+      "conceptTags": [
+        "gateway",
+        "openclaw-gateway",
+        "0.4",
+        "0.1",
+        "0.3",
+        "控告",
+        "内存",
+        "warn"
+      ]
+    },
+    "memory:memory/daily/2026-05-11.md:1270:1314": {
+      "key": "memory:memory/daily/2026-05-11.md:1270:1314",
+      "path": "memory/daily/2026-05-11.md",
+      "startLine": 1270,
+      "endLine": 1314,
+      "source": "memory",
+      "snippet": "- 80% → purge清缓存 - 85% → 杀Chrome+微信 - 90% → 杀其他非保护 - 95% → 只留QClaw+openclaw，其他全杀 ## 21:13 内存保护规则确定 ### 最终规则 | 内存 | 规则 | |------|------| | < 85% | 不动 | | 85%-89% | 按内存排序杀，不杀 QClaw/openclaw | | ≥ 90% | 按内存排序杀，QClaw 也可以杀 | | 任何情况 | UURemote 永远不杀 | - UURemote 绝对保护（任何情况不杀） - QClaw/openclaw 90%以下保护，90%以上可杀 - 系统进程永远保护 - 每轮最多杀5个，按内存占用从大到小 脚本已更新：`/Users/mac/.qclaw/scripts/memory-protector.sh` 待用户确认开启 ## 21:18 内存保护分级规则+开关测试完成 ### 最终分级规则 | 内存 | 动作 | |------|------| | < 80% | 不动 | | 80%-84% | 杀低影响（浏览器/输入法/小工具）| | 85%-89% | +杀中影响（微信/大型App）| | ≥ 90% | QClaw 也可杀 | | 永远 | UURemote 不杀 | ### 测试结果 - 脚本执行 ✅ (59%不触发) - launchctl load/unload ✅ - 定时每分钟运行 ✅ - 桌面开关 toggle-memory-protector.command ✅ ### 当前状态：已开",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1,
+      "maxScore": 1,
+      "firstRecalledAt": "2026-05-19T04:49:46.043Z",
+      "lastRecalledAt": "2026-05-19T04:49:46.043Z",
+      "queryHashes": [
+        "908e79f130e9"
+      ],
+      "recallDays": [
+        "2026-05-19"
+      ],
+      "conceptTags": [
+        "qclaw/openclaw",
+        "users/mac",
+        "浏览器/输入法/小工具",
+        "微信/大型app",
+        "load/unload",
+        "toggle-memory-protector.command",
+        "purge",
+        "chrome"
+      ]
+    },
+    "memory:memory/daily/2026-04-28.md:206:247": {
+      "key": "memory:memory/daily/2026-04-28.md:206:247",
+      "path": "memory/daily/2026-04-28.md",
+      "startLine": 206,
+      "endLine": 247,
+      "source": "memory",
+      "snippet": "- 无障碍权限保活问题 - 实际测试可行性 --- ## 22:49 用户坚持微信方案 ### 进展 用户明确要求**个人微信**的方案，不接受企业微信。 ### 已讨论的方案 | 方案 | 可行性 | 风险 | 备注 | |------|--------|------|------| | Auto.js 自动化 | ✅ 可行 | ⚠️ 可能封号 | 模拟点击操作 | | 微信 Hook (Xposed) | ⚠️ | ❌ 高风险 | 需 Root | | 企业微信 | ✅ | ✅ 安全 | 用户不考虑 | ### 待办 - 用户要求找**成熟的可行方案**，而非理论方案 - 需要进一步调研 Auto.js 实际实现细节/代码 - 需要确认跌倒宝 App 如何调用 Auto.js 脚本 ### 关键决策点 - 微信通道优先级 > 企业微信 - 需要找真正可落地的实现方案 ### 技术待确认 - Auto.js 是否可被跌倒宝后台服务调用 - 无障碍权限保活问题 - 实际测试可行性 --- ## 22:55 用户要求集成到 App 内 ### 核心需求 用户明确要求把微信自动化**集成到跌倒宝 App 里**，不接受独立 App 方案。 ### 用户的技术观察 - 微商软件批量加好友/发消息\"看起来没有每次授权\" - 应该是用 AccessibilityService（无障碍服务）一次性授权 - 希望跌倒宝也能这样做 ### 技术确认",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1,
+      "maxScore": 1,
+      "firstRecalledAt": "2026-05-19T04:49:46.043Z",
+      "lastRecalledAt": "2026-05-19T04:49:46.043Z",
+      "queryHashes": [
+        "908e79f130e9"
+      ],
+      "recallDays": [
+        "2026-05-19"
+      ],
+      "conceptTags": [
+        "auto.js",
+        "实际实现细节/代码",
+        "微商软件批量加好友/发消息",
+        "障碍",
+        "权限",
+        "问题",
+        "实际",
+        "测试"
       ]
     }
   }

@@ -57,9 +57,10 @@ RemoteAssistService.instance
 ### ADB input text 空格替代符：`%s`（不是`%20`！`%20`会变成字面文本）
 
 ### K70调试
-- **ADB所有命令不可靠**：shell/RUN_COMMAND/input text 全部失败
-- **SSH是唯一可靠方案**
-- 连接方式：`adb forward tcp:8022 tcp:8022` → `ssh localhost -p 8022`
+- **ADB input 可以启动 sshd**：`adb shell input text 'sshd'` + `adb shell input keyevent 66`
+- **SSH是唯一可靠方案**：先 `adb forward tcp:8022 tcp:8022`，再 `ssh -p 8022 -i ~/.ssh/k70_key u0_a280@localhost`
+- **sshd不会开机自启**：每次重启K70后需通过ADB input重新启动
+- **后端路径**：`~/diedaobao-server/`（不是 `~/.qclaw/diedaobao-server/`）
 
 ### 录制流程关键点
 1. 点"好的，开始"前必须先启动Overlay，否则录制为空
@@ -148,6 +149,21 @@ RemoteAssistService.instance
 - `remote_frame` - 远程协助帧
 - `assist_status` - 协助状态
 
+### Kotlin/Android类型陷阱
+```kotlin
+// ❌ 错误 — JSONObject.put(String, Float)不存在
+json.put("impactG", impactG)  // NoSuchMethodError!
+
+// ✅ 正确 — 必须显式转Double
+json.put("impactG", impactG.toDouble())
+json.put("mlScore", mlScore.toDouble())
+json.put("physicalScore", physicalScore.toDouble())
+```
+原因：Android的JSONObject是Java类，只有put(String, Double)签名，没有put(String, Float)。Kotlin的Float不会自动装箱为Double。
+
+### 代码改动后必须git commit
+用户多次指出改代码不提交的问题。每次代码修改后必须commit，不要只存记忆文件。
+
 ---
 
 ## 已知问题/待办
@@ -167,6 +183,8 @@ RemoteAssistService.instance
 Go静态编译走`[::1]:53`，Termux沙箱内无法访问。可用ngrok（K70已有ngrok2.zip）或升级cloudflared。
 
 ---
+- MIUI APK安装流程：adb install -r 可直接绕过所有弹窗（推荐），推送APK到K70后直接adb install即可
+- K70 Termux自动化：必须装Termux:API才能am startservice执行命令，SSH需Termux内手动运行sshd（不稳定）
 
 ## 用户特征
 
@@ -206,3 +224,32 @@ Go静态编译走`[::1]:53`，Termux沙箱内无法访问。可用ngrok（K70已
 - 不要命令行命令，要可点击使用的桌面App
 - 方案用1、2、3、4方式命名快捷方式
 - 测试时不要搞崩当前运行的QClaw进程
+- APK编译好后自动发送到微信文件传输助手（用 wechat_mac_send.sh，直接传APK路径，不复制桌面）
+- 微信发送用Mac客户端（AppleScript），不用网页版（太不稳定）
+- K70远程操作：必须先装Termux:API，之后才能可靠重启服务端
+
+## 技术规范偏好
+
+- 每次编译前必须递增versionCode，否则Android不会真正更新
+- MIUI安装弹窗：每个按钮只点1次，成功后位置变成取消更新，多点必误触
+- network_security_config.xml不支持CIDR网段，必须写具体IP
+- Kotlin thread {}内必须try-catch，未捕获异常会崩溃整个进程
+- JavaScript中 || 会把0和空字符串视为falsy，数值字段要用 ?? 避免误转换
+- MIUI抑制新安装App的浮动通知，setFullScreenIntent可绑过抑制（类似来电）
+- ADB input text空格用%s不是%20，input touchscreen tap比keyevent更可靠
+- 双端App都是外网使用，绝不能改老人端为localhost
+- 不要改安装包名字，编译完只改版本号就行
+- K70是独立服务器，不依赖Mac做任何中转（Mac只用于编译和传文件）
+- 微信发送大文件timeout≠失败，不要因超时杀进程，要验证实际结果
+
+## 当前项目与关注
+
+- 跌倒宝项目当前阻塞：ML推理从未触发（灵敏度阈值问题），通知链路已修复
+- 老人端versionCode=136，子女端versionCode=18
+
+## 经验与决策
+
+- MIUI APK安装：adb install -r 可绕过MIUI弹窗（推荐优先用），推送APK到K70后直接adb install即可
+- MIUI首次安装需3步（ICP→安全checkbox→指纹），更新覆盖只需2步（ICP→安全checkbox）
+- 请求去重ID必须用请求本身的唯一标识（requestTime），绝不能用当前时间戳
+- ScreenCaptureService生命周期应独立于Activity，Activity关闭不等于用户想结束协助
