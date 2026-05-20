@@ -1,6 +1,7 @@
 package com.falldetector.diedaobao.cloud
 
 import android.content.Context
+import com.falldetector.diedaobao.config.ServerConfig
 import android.util.Log
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -29,9 +30,8 @@ import com.falldetector.diedaobao.util.AppLogger
 object WSClient {
     private const val TAG = "WSClient"
     
-    // WebSocket 服务器地址（K70 本地）
-    // 注意：老人端跑在 K70 上，连 localhost:3000
-    private const val WS_URL = "wss://clerk-anything-adopt-lately.trycloudflare.com/ws"
+    // WS_URL已迁移到ServerConfig
+    private val WS_URL = ServerConfig.WS_URL
     
     // 重连配置
     private const val RECONNECT_DELAY_MS = 3000L

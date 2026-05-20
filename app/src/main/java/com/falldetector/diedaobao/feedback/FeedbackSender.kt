@@ -1,5 +1,6 @@
 package com.falldetector.diedaobao.feedback
 
+import com.falldetector.diedaobao.config.ServerConfig
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
@@ -19,9 +20,8 @@ import java.util.concurrent.TimeUnit
 object FeedbackSender {
     private const val TAG = "FeedbackSender"
     
-    // ngrok 公网地址（写死在App里，用户装上就能用）
-    private const val API_URL = "https://oscular-august-equanimously.ngrok-free.dev/api/feedback"
-    private const val API_KEY = "fall_detection_secret_key_2024"
+    // URL已迁移到ServerConfig
+    private val API_URL = ServerConfig.FEEDBACK_URL
     
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -110,7 +110,6 @@ object FeedbackSender {
             val body = payload.toString().toRequestBody(JSON)
             val request = Request.Builder()
                 .url(API_URL)
-                .addHeader("X-API-Key", API_KEY)
                 .addHeader("Content-Type", "application/json")
                 .post(body)
                 .build()

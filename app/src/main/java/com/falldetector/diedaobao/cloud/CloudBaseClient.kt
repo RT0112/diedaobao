@@ -1,11 +1,13 @@
 package com.falldetector.diedaobao.cloud
 
 import android.content.Context
+import com.falldetector.diedaobao.config.ServerConfig
 import com.falldetector.diedaobao.util.AppLogger
 import android.util.Log
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import kotlinx.coroutines.withTimeout
@@ -22,7 +24,9 @@ object CloudBaseClient {
     private const val TAG = "CloudBaseClient"
     
     // 外网地址（双端均外网使用）
-    private const val BASE_URL = "https://clerk-anything-adopt-lately.trycloudflare.com"
+    // Serveo.net 隧道（生产环境）
+    // BASE_URL已迁移到ServerConfig，所有URL统一管理
+    private val BASE_URL = ServerConfig.BASE_URL
     
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
@@ -556,5 +560,22 @@ object CloudBaseClient {
                 null
             }
         }
+    }
+
+    /**
+     * 上报围栏越界告警 → 推送给子女端
+     */
+    suspend fun reportGeofenceBreach(context: Context, breaches: List<String>, elderName: String): Boolean {
+        val prefs = context.getSharedPreferences("cloudbase", Context.MODE_PRIVATE)
+        val userId = prefs.getString("user_id", null) ?: return false
+        val body = JSONObject().apply {
+            put("action", "breach_notify")
+            put("userId", userId)
+            put("elderName", elderName)
+            put("breaches", JSONArray(breaches))
+            put("timestamp", System.currentTimeMillis())
+        }
+        val result = callFunction("geofence", body)
+        return result != null
     }
 }

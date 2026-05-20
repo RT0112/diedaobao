@@ -1,6 +1,7 @@
 package com.falldetector.diedaobao.assist
 
 import android.app.*
+import com.falldetector.diedaobao.config.ServerConfig
 import com.falldetector.diedaobao.util.AppLogger
 import android.content.Context
 import android.content.Intent
@@ -54,7 +55,8 @@ class ScreenCaptureService : Service() {
         const val EXTRA_ELDER_ID = "elder_id"
         const val EXTRA_GUARDIAN_ID = "guardian_id"
 
-        private const val BASE_URL = "https://clerk-anything-adopt-lately.trycloudflare.com"
+        // BASE_URL已迁移到ServerConfig
+        private val BASE_URL = ServerConfig.BASE_URL
 
         // MIUI/HyperOS 兼容：用绑定方式而非前台服务
         var isRunning = false
@@ -65,7 +67,7 @@ class ScreenCaptureService : Service() {
             private set
         var streamHeight: Int = 0
             private set
-        private const val SIGNAL_URL = "$BASE_URL/remote-assist"
+        private val SIGNAL_URL = "$BASE_URL/remote-assist"
 
         // v26: 帧率提升至3fps，改善子女端延迟体验
         private const val TARGET_FPS = 3  // 3fps，平衡流畅度和网络压力

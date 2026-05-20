@@ -865,6 +865,20 @@ class FallDetectionService : Service() {
             } catch (e: Exception) {
                 AppLogger.e(TAG, "围栏越界通知发送失败: ${e.message}")
             }
+
+            // 同时通过 WebSocket 推送给子女端 App
+            try {
+                val elderName = getSharedPreferences("cloudbase", Context.MODE_PRIVATE)
+                    .getString("elder_name", "老人") ?: "老人"
+                val pushed = com.falldetector.diedaobao.cloud.CloudBaseClient.reportGeofenceBreach(
+                    this@FallDetectionService,
+                    listOf(fenceName),
+                    elderName
+                )
+                Log.i(TAG, "围栏越界 WS 推送结果: $pushed")
+            } catch (e: Exception) {
+                AppLogger.e(TAG, "围栏越界 WS 推送失败: ${e.message}")
+            }
         }
     }
 

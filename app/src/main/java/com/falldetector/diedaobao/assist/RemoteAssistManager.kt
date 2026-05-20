@@ -424,30 +424,14 @@ object RemoteAssistManager {
 
     /**
      * 跳转到无障碍设置页
-     * 尝试直接打开当前 App 的无障碍详情页，失败则打开通用列表
+     * HyperOS/MIUI 部分版本对 ACCESSIBILITY_DETAILS_SETTINGS 支持不完整，
+     * 直接打开通用列表更稳定，用户手动找到跌倒宝即可。
      */
     fun openAccessibilitySettings(context: Context): Intent {
-        // v24: 优先尝试直接跳到跌倒宝的详情页（HyperOS/MIUI 部分版本支持）
-        // 如果详情页 Intent 不可解析，fallback 到通用列表
-        val component = ComponentName(
-            context,
-            com.falldetector.diedaobao.assist.RemoteAssistService::class.java
-        )
-        // ACTION_ACCESSIBILITY_DETAILS_SETTINGS 和 EXTRA_ACCESSIBILITY_COMPONENT_NAME
-        // 是 API 24+ 的隐藏常量，需用字符串硬编码
-        val detailIntent = Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS")
-        detailIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        detailIntent.putExtra("android.provider.extra.ACCESSIBILITY_COMPONENT_NAME", component.flattenToString())
-
-        // 先检查能否解析
-        if (detailIntent.resolveActivity(context.packageManager) != null) {
-            Log.i(TAG, "openAccessibilitySettings: 详情页Intent可解析，使用详情页")
-            return detailIntent
+        Log.i(TAG, "openAccessibilitySettings: 打开通用无障碍列表")
+        return android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-
-        // Fallback: 通用无障碍列表页
-        Log.i(TAG, "openAccessibilitySettings: 详情页不可用，fallback到通用列表")
-        return android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
     }
 
     // ==================== 内部方法 ====================

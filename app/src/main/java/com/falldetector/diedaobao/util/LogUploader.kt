@@ -1,5 +1,6 @@
 package com.falldetector.diedaobao.util
 
+import com.falldetector.diedaobao.config.ServerConfig
 import android.content.Context
 import android.util.Log
 import java.io.PrintWriter
@@ -27,7 +28,8 @@ import javax.net.ssl.HttpsURLConnection
 object LogUploader : Thread.UncaughtExceptionHandler {
 
     private const val TAG = "LogUploader"
-    private const val UPLOAD_URL = "https://clerk-anything-adopt-lately.trycloudflare.com/upload-log"
+    // URL已迁移到ServerConfig
+    private val UPLOAD_URL = ServerConfig.UPLOAD_LOG_URL
     
     // 本地缓存文件名（崩溃时先写本地，异步上传）
     private const val CACHE_FILE = "error_log_cache.txt"
