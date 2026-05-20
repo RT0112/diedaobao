@@ -6,10 +6,12 @@ package com.falldetector.diedaobao.config
  */
 object ServerConfig {
     // ⚠️ 改这里就行！
-    val BASE_URL = "https://oscular-august-equanimously.ngrok-free.dev"
+    val BASE_URL = "http://localhost:3000"
     
     // 派生URL（自动从BASE_URL计算，不需要改）
-    val WS_URL = "wss://${BASE_URL.substringAfter("://")}/ws"
+    // 根据BASE_URL协议自动选择ws/wss
+    private val WS_PROTOCOL = if (BASE_URL.startsWith("https://")) "wss" else "ws"
+    val WS_URL = "$WS_PROTOCOL://${BASE_URL.substringAfter("://")}/ws"
     val FEEDBACK_URL = "$BASE_URL/feedback"
     val UPLOAD_LOG_URL = "$BASE_URL/upload-log"
     val REMOTE_ASSIST_URL = "$BASE_URL/remote-assist"
