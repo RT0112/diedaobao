@@ -325,6 +325,23 @@ app.post('/geofence', (req, res) => {
       return res.json({ success: true, breaches })
     }
 
+    // 围栏越界 → 推送给绑定的子女端（通过 WebSocket）
+    if (action === 'breach_notify') {
+      if (!elderId) return res.json({ success: false, message: '缺少elderId' })
+      const breaches = (body.breaches || []).map(b => String(b).slice(0, 50))
+      const elderName = String(body.elderName || '老人').slice(0, 20)
+      const timestamp = body.timestamp || Date.now()
+      
+      // 查找绑定关系，获取 guardianId
+      const binding = db.prepare('SELECT * FROM family_bindings WHERE elderId=? LIMIT 1').get(elderId)
+      if (binding) {
+        const msg = { type: 'geofence_breach', data: { elderId, elderName, breaches, timestamp } }
+        const pushed = sendToUser(binding.guardianId, msg)
+        Log.info(`围栏越界 WS 推送 → ${binding.guardianId}: ${JSON.stringify(msg)}, pushed=${pushed}`)
+      }
+      return res.json({ success: true })
+    }
+
     return res.json({ success: false, message: `未知操作: ${action}` })
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message })
@@ -573,6 +590,44 @@ app.post('/upload-log', (req, res) => {
       .run(id, userId, level || 'ERROR', tag || 'App', String(msg).substring(0, 10000), stackTrace ? String(stackTrace).substring(0, 20000) : null, metadata ? JSON.stringify(metadata) : null, Date.now(), new Date().toISOString().split('T')[0])
     return res.json({ code: 200, logId: id, message: '日志已上传' })
   } catch (err) {
+    return res.status(500).json({ code: 500, message: err.message })
+  }
+})
+
+// ========== feedback ==========
+app.post('/feedback', (req, res) => {
+  try {
+    const { type, contact, content, device_model, android_version, app_version, platform } = req.body
+    if (!type || !content) return res.json({ code: 400, message: '缺少 type 或 content' })
+    const db = getDb()
+    const id = genId()
+    db.prepare(
+      'INSERT INTO feedback (id, type, contact, content, device_model, android_version, app_version, platform, timestamp, date) VALUES (?,?,?,?,?,?,?,?,?,?)'
+    ).run(
+      id,
+      String(type).substring(0, 100),
+      contact ? String(contact).substring(0, 200) : null,
+      String(content).substring(0, 10000),
+      device_model || null,
+      android_version || null,
+      app_version || null,
+      platform || 'unknown',
+      Date.now(),
+      new Date().toISOString().split('T')[0]
+    )
+    return res.json({ code: 200, feedbackId: id, message: '反馈已收到' })
+  } catch (err) {
+    return res.status(500).json({ code: 500, message: err.message })
+  }
+})
+
+// ========== feedback 查询(临时) ==========
+app.get('/feedback', (req, res) => {
+  try {
+    const db = getDb()
+    const rows = db.prepare("SELECT id,type,contact,substr(content,1,50) as content,device_model,app_version,platform,datetime(timestamp/1000,'unixepoch','localtime') as time FROM feedback ORDER BY timestamp DESC LIMIT 20").all()
+    return res.json({ code: 200, total: rows.length, feedbacks: rows })
+  } catch(err) {
     return res.status(500).json({ code: 500, message: err.message })
   }
 })
