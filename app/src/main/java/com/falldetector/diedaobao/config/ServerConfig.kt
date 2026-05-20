@@ -6,7 +6,7 @@ package com.falldetector.diedaobao.config
  */
 object ServerConfig {
     // ⚠️ 改这里就行！
-    val BASE_URL = "https://6e2b7f6238485d.lhr.life"
+    val BASE_URL = "https://oscular-august-equanimously.ngrok-free.dev"
     
     // 派生URL（自动从BASE_URL计算，不需要改）
     val WS_URL = "wss://${BASE_URL.substringAfter("://")}/ws"
