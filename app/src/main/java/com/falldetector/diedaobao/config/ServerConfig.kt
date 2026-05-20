@@ -6,8 +6,7 @@ package com.falldetector.diedaobao.config
  */
 object ServerConfig {
     // ⚠️ 改这里就行！
-    // 老人端在K70上运行，直接连localhost
-    val BASE_URL = "http://localhost:3000"
+    val BASE_URL = "https://oscular-august-equanimously.ngrok-free.dev"
     
     // 派生URL（自动从BASE_URL计算，不需要改）
     // 根据BASE_URL协议自动选择ws/wss
