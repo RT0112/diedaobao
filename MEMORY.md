@@ -179,6 +179,15 @@ json.put("physicalScore", physicalScore.toDouble())
 2. MIUI安全检测弹窗 → **先勾选checkbox** → 点"继续安装"
 3. 指纹验证 → 通知用户手动按（无法远程完成）
 
+### GitHub推送方式（2026-05-20配置完成）
+- **方式**：SSH key认证（非HTTPS+PAT）
+- **公钥**：已添加到GitHub，名称 `diedaobao-mac`（ed25519）
+- **私钥**：`~/.ssh/github_diedaobao`
+- **config**：`~/.ssh/config` 已配置Host github.com指向该私钥
+- **remote URL**：`git@github.com:RT0112/diedaobao.git`
+- **分支**：main（已设置upstream tracking）
+- 直接 `git push` 即可，无需任何认证交互
+
 ### Cloudflared在K70上DNS失败
 Go静态编译走`[::1]:53`，Termux沙箱内无法访问。可用ngrok（K70已有ngrok2.zip）或升级cloudflared。
 
@@ -237,7 +246,7 @@ Go静态编译走`[::1]:53`，Termux沙箱内无法访问。可用ngrok（K70已
 - JavaScript中 || 会把0和空字符串视为falsy，数值字段要用 ?? 避免误转换
 - MIUI抑制新安装App的浮动通知，setFullScreenIntent可绑过抑制（类似来电）
 - ADB input text空格用%s不是%20，input touchscreen tap比keyevent更可靠
-- 双端App都是外网使用，绝不能改老人端为localhost
+- 双端App用localhost直连K70后端（公网穿透方案已放弃）
 - 不要改安装包名字，编译完只改版本号就行
 - K70是独立服务器，不依赖Mac做任何中转（Mac只用于编译和传文件）
 - 微信发送大文件timeout≠失败，不要因超时杀进程，要验证实际结果

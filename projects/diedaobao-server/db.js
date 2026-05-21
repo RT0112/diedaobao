@@ -50,6 +50,9 @@ function initTables() {
       mlScore REAL DEFAULT 0,
       physicalScore REAL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'pending',
+      weightedScore REAL DEFAULT 0,
+      decisionPath TEXT DEFAULT '',
+      sensorDataJson TEXT DEFAULT '[]',
       confirmedBy TEXT,
       confirmedAt INTEGER,
       createdAt INTEGER NOT NULL DEFAULT (strftime('%s','now')*1000)
@@ -142,6 +145,25 @@ function initTables() {
     CREATE INDEX IF NOT EXISTS idx_feedback_timestamp ON feedback(timestamp);
     CREATE INDEX IF NOT EXISTS idx_feedback_platform ON feedback(platform);
   `)
+
+  // === 迁移：给已存在的 fall_events 表加列（根因修复：反馈功能监测数据为空）===
+  try {
+    const cols = db.prepare("PRAGMA table_info(fall_events)").all().map(c => c.name)
+    if (!cols.includes('weightedScore')) {
+      db.exec('ALTER TABLE fall_events ADD COLUMN weightedScore REAL DEFAULT 0')
+      console.log('[db] 已添加 fall_events.weightedScore 列')
+    }
+    if (!cols.includes('decisionPath')) {
+      db.exec('ALTER TABLE fall_events ADD COLUMN decisionPath TEXT DEFAULT \'\'')
+      console.log('[db] 已添加 fall_events.decisionPath 列')
+    }
+    if (!cols.includes('sensorDataJson')) {
+      db.exec('ALTER TABLE fall_events ADD COLUMN sensorDataJson TEXT DEFAULT \'[]\'')
+      console.log('[db] 已添加 fall_events.sensorDataJson 列')
+    }
+  } catch (e) {
+    console.log('[db] 迁移失败（可忽略）:', e.message)
+  }
 }
 
 // 生成简短 ID

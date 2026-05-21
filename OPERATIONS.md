@@ -767,3 +767,120 @@ curl -X POST http://192.168.4.19:3000/feedback \
 # 测试查询
 curl http://192.168.4.19:3000/feedback
 ```
+
+---
+
+## 🌐 配置外网访问（Cloudflare Tunnel）
+
+### 情境
+子女端在外网（非家庭WiFi）也需要访问K70后端。
+
+### 做法：Cloudflare Tunnel（免费、稳定、K70独立运行）
+
+#### 1. K70安装cloudflared
+```bash
+# 在K70 Termux中执行
+cd ~/diedaobao-server
+curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64 -o cloudflared
+chmod +x cloudflared
+./cloudflared --version
+```
+
+如果GitHub慢，用镜像：
+```bash
+curl -L https://ghproxy.com/https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64 -o cloudflared
+chmod +x cloudflared
+```
+
+#### 2. 登录Cloudflare（首次）
+```bash
+./cloudflared tunnel login
+```
+会输出一个URL，用浏览器打开，登录Cloudflare账号授权。
+
+#### 3. 创建隧道（首次）
+```bash
+./cloudflared tunnel create diedaobao
+```
+记下输出的隧道ID。
+
+#### 4. 启动隧道（测试）
+```bash
+./cloudflared tunnel run --url http://localhost:3000 diedaobao
+```
+输出类似：
+```
+https://xxxx-xxxx-xxxx.trycloudflare.com
+```
+记下这个域名。
+
+#### 5. 后台运行
+```bash
+nohup ./cloudflared tunnel run --url http://localhost:3000 diedaobao > tunnel.log 2>&1 &
+```
+
+#### 6. 开机自启脚本
+```bash
+cat > ~/diedaobao-server/start-all.sh << 'EOF'
+#!/data/data/com.termux/files/usr/bin/bash
+cd ~/diedaobao-server
+
+# 启动后端
+node server.js > server.log 2>&1 &
+sleep 2
+
+# 启动隧道
+nohup ./cloudflared tunnel run --url http://localhost:3000 diedaobao > tunnel.log 2>&1 &
+
+echo "后端+隧道已启动"
+echo "外网地址:"
+grep "trycloudflare.com" tunnel.log
+EOF
+chmod +x ~/diedaobao-server/start-all.sh
+```
+
+#### 7. 子女端配置
+修改子女端 `ServerConfig.kt`：
+```kotlin
+val BASE_URL = "https://xxxx-xxxx-xxxx.trycloudflare.com"
+```
+重新编译安装子女端APK。
+
+### 常用命令
+```bash
+# 查看隧道进程
+ps aux | grep cloudflared
+
+# 查看外网域名
+grep "trycloudflare.com" ~/diedaobao-server/tunnel.log
+
+# 重启隧道
+pkill -f cloudflared
+~/diedaobao-server/start-all.sh
+
+# 完全重启（后端+隧道）
+pkill -f cloudflared; pkill -f "node server"
+~/diedaobao-server/start-all.sh
+```
+
+### 验证
+在子女手机（关闭WiFi用4G）访问：
+```
+https://xxxx-xxxx-xxxx.trycloudflare.com/health
+```
+应返回 `{"status":"ok",...}`
+
+### 备选：Tailscale（P2P直连）
+如果Cloudflare被墙：
+1. K70装Tailscale：`pkg install tailscale` 或下载APK
+2. `tailscale up` 登录
+3. 获取K70的Tailscale IP（100.x.x.x）
+4. 子女手机也装Tailscale，连接后访问 `http://100.x.x.x:3000`
+
+---
+
+## 📚 相关文档
+
+- **项目地图**：`docs/PROJECT_MAP.md` — 完整代码结构和数据流
+- **外网访问**：`docs/CLOUDFLARE_TUNNEL.md` — 详细部署步骤
+- **操作手册**：`OPERATIONS.md`（本文档）— 可复用操作模式

@@ -68,16 +68,16 @@ app.post('/user-register', (req, res) => {
 // ========== fall-report ==========
 app.post('/fall-report', (req, res) => {
   try {
-    const { userId, timestamp, latitude, longitude, impactG, ffDuration, mlScore, physicalScore, accuracy } = req.body
+    const { userId, timestamp, latitude, longitude, impactG, ffDuration, mlScore, physicalScore, weightedScore, decisionPath, sensorDataJson, accuracy } = req.body
     if (!userId) return res.json({ code: 400, message: 'Missing userId' })
 
     const db = getDb()
     const id = genId()
     const fallTs = timestamp ? (isNaN(timestamp) ? Date.now() : parseInt(timestamp)) : Date.now()
 
-    db.prepare(`INSERT INTO fall_events (id, userId, timestamp, latitude, longitude, impactG, ffDuration, mlScore, physicalScore, status, createdAt)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(id, userId, fallTs, latitude ?? null, longitude ?? null, impactG ?? 0, ffDuration ?? 0, mlScore ?? 0, physicalScore ?? 0, 'pending', Date.now())
+    db.prepare(`INSERT INTO fall_events (id, userId, timestamp, latitude, longitude, impactG, ffDuration, mlScore, physicalScore, weightedScore, decisionPath, sensorDataJson, status, createdAt)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(id, userId, fallTs, latitude ?? null, longitude ?? null, impactG ?? 0, ffDuration ?? 0, mlScore ?? 0, physicalScore ?? 0, weightedScore ?? 0, decisionPath ?? '', sensorDataJson ?? '[]', 'pending', Date.now())
 
     // 写入 lastFallEvent 到 users 表
     const lastFallEvent = JSON.stringify({ eventId: id, timestamp: fallTs, impactG: impactG ?? 0, mlScore: mlScore ?? 0, latitude: latitude ?? null, longitude: longitude ?? null })
@@ -249,7 +249,15 @@ app.get('/fall-history', (req, res) => {
     const events = rows.map(e => ({
       eventId: e.id, timestamp: e.timestamp,
       latitude: e.latitude, longitude: e.longitude,
-      impactG: e.impactG, mlScore: e.mlScore, status: e.status
+      impactG: e.impactG, mlScore: e.mlScore, status: e.status,
+      // 监测数据字段（供子女端反馈功能使用）
+      impact_strength: e.impactG,
+      ml_probability: e.mlScore,
+      physics_score: e.physicalScore,
+      ff_time_ms: e.ffDuration,
+      weighted_score: e.weightedScore ?? 0,
+      decision_path: e.decisionPath ?? '',
+      sensor_data_json: e.sensorDataJson ?? '[]'
     }))
     return res.json({ code: 200, events, debug: { elderId, totalInCollection: events.length, distinctUserIds: [...new Set(rows.map(r => r.userId))] } })
   } catch (err) {
@@ -554,12 +562,13 @@ app.post('/request-elder-location', (req, res) => {
     const db = getDb()
     const user = db.prepare('SELECT id FROM users WHERE id=?').get(elderId)
     if (!user) return res.json({ code: 404, success: false, message: 'Elder not found' })
-    db.prepare('UPDATE users SET pullLocationRequest=?, pullLocationStatus=? WHERE id=?').run(Date.now(), 'pending', elderId)
+    const requestTime = Date.now()
+    db.prepare('UPDATE users SET pullLocationRequest=?, pullLocationStatus=? WHERE id=?').run(requestTime, 'pending', elderId)
 
     // WS 实时推送位置请求给老人端
-    const wsPushed = sendToUser(elderId, { type: 'location_request', data: { requestTime: Date.now() } })
+    const wsPushed = sendToUser(elderId, { type: 'location_request', data: { requestTime } })
 
-    return res.json({ code: 200, success: true, message: 'Location request sent', requestTime: Date.now(), wsPushed })
+    return res.json({ code: 200, success: true, message: 'Location request sent', requestTime, wsPushed })
   } catch (err) {
     return res.status(500).json({ code: 500, success: false, message: err.message })
   }
@@ -636,6 +645,37 @@ app.get('/feedback', (req, res) => {
 app.use((req, res) => {
   res.status(404).json({ code: 404, message: `Route not found: ${req.method} ${req.path}` })
 })
+
+// ========== 服务端自己重启 ==========
+app.post('/restart', (req, res) => {
+  try {
+    const { spawn } = require('child_process');
+    const fs = require('fs');
+    const path = require('path');
+    
+    res.json({ code: 200, message: '服务端正在重启...' });
+    
+    const logFile = path.join(__dirname, 'server.log');
+    const out = fs.openSync(logFile, 'a');
+    const err = fs.openSync(logFile, 'a');
+    
+    const child = spawn('nohup', ['node', 'server.js'], {
+      cwd: __dirname,
+      detached: true,
+      stdio: ['ignore', out, err]
+    });
+    child.unref();
+    
+    console.log(`✅ 新进程已启动，PID: ${child.pid}`);
+    
+    setTimeout(() => {
+      console.log(`🛑 当前进程退出，新进程已接管`);
+      process.exit(0);
+    }, 2000);
+  } catch (e) {
+    res.status(500).json({ code: 500, message: e.message });
+  }
+});
 
 // 创建 HTTP server 并挂载 WebSocket
 const server = http.createServer(app)
