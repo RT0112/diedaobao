@@ -5,32 +5,6 @@
 
 ---
 
-## 项目概览
-
-**跌倒宝** = 远程协助App + K70本地后端
-
-| 组件 | 技术 | 大小 |
-|------|------|------|
-| 老人端APK | Kotlin Android | ~38MB |
-| 子女端APK | Kotlin Android | ~17MB |
-| 后端 | Node.js/Express/SQLite/WebSocket | K70 Termux |
-| K70屏幕 | 1440×3200 | 小米机型 |
-
-**K70后端地址**：`http://localhost:3000`
-
-### macOS 编译 JDK 路径
-```
-JAVA_HOME=/Users/zhou/jdk-17/jdk-17.0.2.jdk/Contents/Home
-```
-系统PATH里无java，必须设置。编译命令：
-```
-JAVA_HOME=/Users/zhou/jdk-17/jdk-17.0.2.jdk/Contents/Home ./gradlew assembleDebug --no-daemon --max-workers=1
-pkill -f gradle
-```
-**编译成功后自动推送到K70安装，不要等用户确认。**
-
----
-
 ## 🔥 核心铁律（绝对不能忘）
 
 ### 编译规则
@@ -66,65 +40,6 @@ RemoteAssistService.instance
 1. 点"好的，开始"前必须先启动Overlay，否则录制为空
 2. 保存新录制时必须重置 `KEY_AUTO_DISABLED` 和 `KEY_REPLAY_FAIL_COUNT`
 3. 弹窗后要立即调 `showLoading()`，否则Overlay持续拦截导致手机卡
-
----
-
-## 项目架构
-
-### 数据流
-
-```
-跌倒检测流程：
-传感器采集 → FallDetector(ML+物理) → FallDetectionService
-                                              ↓
-                                        CloudBaseClient
-                                              ↓
-                                    server.js (K70:3000)
-                                              ↓
-                                    WebSocket推送
-                                              ↓
-                                    子女端WSClient → 通知
-
-远程协助流程：
-子女请求 → 老人端RemoteAssistService
-               ↓
-          PermissionRecordManager
-               ↓
-          [首次]→ 录制引导 → TouchRecordOverlay拦截坐标
-               ↓
-          [回放]→ tryAutoHandle() → AccessibilityService点击
-               ↓
-          ScreenCaptureService → 屏幕帧 → K70 → WS推送子女
-```
-
-### 关键文件
-
-| 路径 | 说明 |
-|------|------|
-| `projects/fall-detection-app/detect/FallDetector.kt` | 跌倒检测核心 |
-| `projects/fall-detection-app/assist/RemoteAssistService.kt` | 无障碍服务 |
-| `projects/fall-detection-app/assist/PermissionRecordManager.kt` | 录制/回放 (v17) |
-| `projects/diedaobao-server/server.js` | Express API |
-
----
-
-## 权限自动点击演进
-
-| 版本 | 方案 | 结果 | 根因 |
-|------|------|------|------|
-| v1~v4 | TouchRecordOverlay悬浮窗 | ❌ 失败 | z-order被系统弹窗遮挡 |
-| v5 | AccessibilityService节点树 | ✅ 成功 | 绕过z-order |
-| v17 | 极简重写（493行→200行） | ✅ 成功 | 修复三大问题 |
-
-### v17核心修复（来自2026-05-13记忆）
-1. 只检查 `com.android.systemui` 窗口，避免误报
-2. `dispatchGestureClick` 改为纯异步
-3. 保存录制时重置禁用标志
-
-### HyperOS两步弹窗结构
-1. 第一步：权限说明弹窗（"此应用将捕获您屏幕上的所有内容..."）
-2. 第二步：实际权限弹窗（允许/拒绝）
-→ 录制时两个都要拦截坐标
 
 ---
 
@@ -201,9 +116,9 @@ Go静态编译走`[::1]:53`，Termux沙箱内无法访问。可用ngrok（K70已
 2. **极强韧性**：v1~v4四轮失败仍持续迭代，不妥协
 3. **重视根因**：遇到bug先分析再修复，不试错
 4. **开发习惯**：
-   - 老人端操作极简优先
-   - 画质240p→360p接受更高带宽
-   - 重视云函数field projection优化
+- 老人端操作极简优先
+- 画质240p→360p接受更高带宽
+- 重视云函数field projection优化
 
 ---
 
@@ -217,6 +132,7 @@ Go静态编译走`[::1]:53`，Termux沙箱内无法访问。可用ngrok（K70已
 
 ---
 
+<<<<<<< Updated upstream
 ## 开发原则
 
 1. **先读代码，再给建议** - 不要猜测，先理解完整数据流
@@ -228,6 +144,8 @@ Go静态编译走`[::1]:53`，Termux沙箱内无法访问。可用ngrok（K70已
 
 *最后更新：2026-05-16*
 
+=======
+>>>>>>> Stashed changes
 ## 用户身份与偏好
 
 - 不要命令行命令，要可点击使用的桌面App
@@ -253,8 +171,23 @@ Go静态编译走`[::1]:53`，Termux沙箱内无法访问。可用ngrok（K70已
 
 ## 当前项目与关注
 
-- 跌倒宝项目当前阻塞：ML推理从未触发（灵敏度阈值问题），通知链路已修复
-- 老人端versionCode=136，子女端versionCode=18
+- 老人端versionCode=147，子女端versionCode=30
+- v0.47修复：跌倒通知数据全链路补全 + 围栏通知推送修复
+- 待修复：首页位置获取异常（第二次获取卡住）
+
+## CC集成规则（写代码必须交给CC）
+
+- **写代码必须交给CC**，不要自己改代码文件
+- **CLAUDE.md已部署** → `projects/CLAUDE.md`，CC自动读取项目架构+铁律
+- **大任务用交互模式** → `cc-agent.sh --interactive`，CC可迭代探索，不超时
+- **小任务用单发模式** → `cc-agent.sh "prompt"`，timeout=300s
+- **续接会话** → `cc-agent.sh --continue "新prompt"`
+- **cwd必须设projects/根目录** → CC能看全项目三端，不要设子目录
+- **不要按文件拆分bug** → 给CC完整问题描述，让它做全链路分析
+- **CC发现根因比我强** — 实战证明CC能发现我遗漏的代码路径
+- **双端都改了→双端APK都发微信**
+- CC修完后编译验证，有编译错误用 --continue 让CC修
+- adb路径: /Users/zhou/Library/Android/sdk/platform-tools/adb
 
 ## 经验与决策
 

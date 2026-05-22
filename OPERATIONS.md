@@ -6,7 +6,52 @@
 
 ---
 
-## 📱 编译 Android APK
+## 📝 文字修改经验（2026-05-22新增）
+
+### 全局文字修改的搜索方法
+
+**情境**：需要修改某个功能的所有相关文字（如"远程协助通知"→"跌倒警告"）
+
+**正确做法**：
+1. **同时搜索老人端和子女端**，避免遗漏
+2. **搜索所有可能的文字变体**（标题、描述、状态栏通知等）
+3. **区分代码和注释**，注释里的文字不需要改
+
+**操作步骤**：
+```bash
+# 1. 搜索老人端
+search_files(pattern="远程协助通知", 
+             path="projects/fall-detection-app", 
+             target="content")
+
+# 2. 搜索子女端
+search_files(pattern="远程协助通知", 
+             path="projects/family-guardian-app", 
+             target="content")
+
+# 3. 排除.md文件（文档不需要改）
+# 4. 区分代码和注释（注释不需要改）
+```
+
+**常见遗漏位置**：
+- 状态栏通知标题（`NotificationCompat.Builder.setTitle()`）
+- 通知列表里的描述文字（`tvLocation.text`）
+- 通知详情页标题（`AlertDialog.setTitle()`）
+- 页面标题（`fragment_xxx.xml`里的`android:text`）
+
+**本次教训**：
+- ✅ 找到了 `HistoryFragment.kt` 第116行（详情页标题）
+- ✅ 找到了 `HistoryFragment.kt` 第248行（列表描述）
+- ✅ 找到了 `HomeFragment.kt` 第336行（全屏通知标题）
+- ✅ 找到了 `HomeFragment.kt` 第353行（普通通知标题）
+- ✅ 找到了 `fragment_history.xml` 第27行（页面标题）
+- ❌ 第一次搜索时漏掉了 `HomeFragment.kt` 的2处状态栏通知标题
+
+**经验**：状态栏通知标题通常在 `HomeFragment.kt` 或 `FallDetectionService.kt` 里，用 `NotificationCompat.Builder` 创建。
+
+---
+
+## 🔲 编译 Android APK
 
 ### 编译后发送 APK 到微信文件传输助手（Mac客户端版）
 

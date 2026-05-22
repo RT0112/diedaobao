@@ -25,6 +25,10 @@ from aiohttp import web, ClientSession
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler("/tmp/proxy_20000.log", mode="a"),
+        logging.StreamHandler(),
+    ],
 )
 log = logging.getLogger("anthropic-proxy")
 
@@ -34,6 +38,12 @@ QCLAW_URL = "http://127.0.0.1:19000/proxy/llm/chat/completions"
 QCLAW_AUTH = "Bearer __QCLAW_AUTH_GATEWAY_MANAGED__"
 QCLAW_MODEL = "modelroute"
 
+<<<<<<< Updated upstream
+=======
+# Timeout: 30s connect, 5min total (CC can take a while to think)
+_PROXY_TIMEOUT = ClientTimeout(total=1800, connect=30)  # 30 min — CC compilation can take 5-10 min
+
+>>>>>>> Stashed changes
 # ── Anthropic → OpenAI: Request Translation ─────────────
 
 def translate_messages(anthropic_messages: list, system: Optional[Any] = None) -> list:
@@ -615,6 +625,11 @@ async def handle_models(request: web.Request) -> web.Response:
     })
 
 
+async def handle_authorize(request: web.Request) -> web.Response:
+    """Fake authorize endpoint — CC interactive mode checks this before using the proxy."""
+    return web.json_response({"status": "ok"})
+
+
 # ── Main ────────────────────────────────────────────────
 
 def main():
@@ -633,6 +648,10 @@ def main():
     app.router.add_post("/v1/messages", handle_messages)
     app.router.add_get("/v1/models", handle_models)
     app.router.add_get("/health", handle_health)
+    
+    # Fake authorize endpoint for CC interactive mode
+    app.router.add_get("/v1/authorize", handle_authorize)
+    app.router.add_post("/v1/authorize", handle_authorize)
 
     log.info(f"Starting Anthropic→qclaw proxy on port {args.port}")
     log.info(f"  qclaw gateway: {qclaw_url}")
