@@ -53,6 +53,8 @@ app.post('/user-register', (req, res) => {
       db.prepare(`UPDATE users SET name=COALESCE(?,name), phone=COALESCE(?,phone), role=COALESCE(?,role), updatedAt=? WHERE deviceId=?`)
         .run(name || existing.name, phone !== undefined ? phone : existing.phone, role || existing.role, Date.now(), deviceId)
       const updated = db.prepare('SELECT * FROM users WHERE deviceId=?').get(deviceId)
+      // 注册时清理旧绑定（防止重新注册后旧绑定残留）
+      db.prepare('DELETE FROM family_bindings WHERE elderId=?').run(updated.id)
       return res.json({ code: 200, message: 'User already exists (updated)', userId: updated.id, data: { id: updated.id, deviceId: updated.deviceId, name: updated.name, phone: updated.phone, role: updated.role } })
     }
 
@@ -220,6 +222,9 @@ app.post('/bind-family', (req, res) => {
 
     db.prepare('UPDATE bind_codes SET used=1 WHERE id=?').run(bindCodeRow.id)
 
+    // 绑定前删除该 elderId 的旧绑定（防止重复绑定）
+    db.prepare('DELETE FROM family_bindings WHERE elderId=?').run(bindCodeRow.elderId)
+    
     const elderRow = db.prepare('SELECT name FROM users WHERE id=?').get(bindCodeRow.elderId)
     const bindingId = genId()
     db.prepare('INSERT INTO family_bindings (id, elderId, familyId, relation, status, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?)')
@@ -345,7 +350,7 @@ app.post('/geofence', (req, res) => {
       if (binding) {
         const msg = { type: 'geofence_breach', data: { elderId, elderName, breaches, timestamp } }
         const pushed = sendToUser(binding.guardianId, msg)
-        Log.info(`围栏越界 WS 推送 → ${binding.guardianId}: ${JSON.stringify(msg)}, pushed=${pushed}`)
+        console.log(`围栏越界 WS 推送 → ${binding.guardianId}: ${JSON.stringify(msg)}, pushed=${pushed}`)
       }
       return res.json({ success: true })
     }
