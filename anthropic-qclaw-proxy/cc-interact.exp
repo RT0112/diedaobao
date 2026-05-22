@@ -1,0 +1,41 @@
+#!/usr/bin/expect -f
+# CC Interactive Mode expect script - 持续发送 Enter 直到 CC 准备好
+log_user 1
+set timeout 60
+
+spawn -noecho {*}$argv
+
+# 等待 CC 完全启动
+after 2000
+
+# 循环发送 Enter，直到看到 CC 提示符
+set count 0
+while {$count < 10} {
+    send "\r"
+    incr count
+    after 500
+    
+    # 检查是否出现提示符
+    expect {
+        -re "claude>" {
+            puts "\n✅ CC Ready (claude> prompt)"
+            interact
+            exit 0
+        }
+        -re "Human:" {
+            puts "\n✅ CC Ready (Human: prompt)"
+            interact
+            exit 0
+        }
+        -re "❯" {
+            # 可能还在主题选择，再发一次 Enter
+            after 300
+        }
+        timeout {
+            # 继续循环
+        }
+    }
+}
+
+puts "\n⚠ CC may need manual interaction"
+interact

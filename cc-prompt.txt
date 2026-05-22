@@ -1,0 +1,24 @@
+请修复跌倒宝子女端3个bug（family-guardian-app/）：
+
+Bug1: 跌倒通知标题仍暴露跌倒细节
+文件: app/src/main/java/com/familyguardian/app/ui/HomeFragment.kt
+行338和355: setContentTitle("🚨 ${notification.elderName}跌倒警报！")
+改为通用描述: setContentTitle("⚠️ ${notification.elderName}需要关注！")
+两处都要改（全屏通知和普通通知）
+
+Bug2: MapActivity第二次查看位置卡住
+文件: app/src/main/java/com/familyguardian/app/ui/MapActivity.kt
+根因: loadElderLocation()函数开头没有重置 wsLocationReceived = false
+导致第二次进入时 wsLocationReceived 还是 true，轮询循环直接return退出
+修复: 在 loadElderLocation() 函数开头加 wsLocationReceived = false
+
+Bug3: 设置页"强制弹窗"开关打开后不生效
+文件: app/src/main/java/com/familyguardian/app/ui/SettingsFragment.kt + HomeFragment.kt
+需要检查:
+1. SettingsFragment里 switch_force_popup 的 checkedChange 监听器有没有正确实现
+2. 开关状态有没有存进 SharedPreferences (key = 'force_popup')
+3. HomeFragment里读这个key的逻辑对不对
+4. 如果都对了，可能是MIUI权限问题（需要"显示在其他应用上层"权限）
+
+请逐个修复，每修完一个就用JAVA_HOME=/Users/zhou/jdk-17/jdk-17.0.2.jdk/Contents/Home ./gradlew assembleDebug --no-daemon --max-workers=1 编译验证，编译通过后adb install到K70实测，3个都修完再发微信。
+注意: 用patch不要直接用write写文件！
