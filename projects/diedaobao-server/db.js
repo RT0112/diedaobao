@@ -130,6 +130,13 @@ function initTables() {
     CREATE INDEX IF NOT EXISTS idx_logs_userId ON logs(userId);
     CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp);
 
+    CREATE TABLE IF NOT EXISTS accounts (
+      id TEXT PRIMARY KEY,
+      username TEXT NOT NULL UNIQUE,
+      passwordHash TEXT NOT NULL,
+      createdAt INTEGER NOT NULL DEFAULT (strftime('%s','now')*1000)
+    );
+    CREATE INDEX IF NOT EXISTS idx_accounts_username ON accounts(username);
     CREATE TABLE IF NOT EXISTS feedback (
       id TEXT PRIMARY KEY,
       type TEXT NOT NULL,

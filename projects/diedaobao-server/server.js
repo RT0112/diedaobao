@@ -30,22 +30,8 @@ app.use((req, res, next) => {
   next()
 })
 
-// JWT 鉴权中间件（放行开放路径）
-const openPaths = ['/health', '/user-register', '/account/register', '/account/login', '/geofence', '/remote-assist']
-app.use((req, res, next) => {
-  if (req.method === 'GET' && req.path === '/health') return next()
-  if (req.method === 'POST' && openPaths.includes(req.path)) return next()
-  const authHeader = req.headers['authorization'] || ''
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : (req.query.token || '')
-  if (!token) return res.status(401).json({ code: 401, message: '未登录，请先登录' })
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET)
-    req.user = decoded
-    next()
-  } catch (e) {
-    return res.status(401).json({ code: 401, message: '登录已过期，请重新登录' })
-  }
-})
+// JWT 鉴权中间件已移除（p0 之前没有 JWT，全部接口直接放行）
+// 如需加回 JWT 保护，参考 git 历史 39b7f3f
 
 // 健康检查
 app.get('/health', (req, res) => {
@@ -76,10 +62,9 @@ app.post('/account/register', (req, res) => {
     const userId = genId()
     db.prepare('INSERT INTO users (id, deviceId, name, phone, role, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?)')
       .run(userId, deviceId, body.name || username, body.phone || '', role || 'elder', Date.now(), Date.now())
-    // 生成 JWT token（永久有效，无过期）
-    const jwt = require('jsonwebtoken')
     const token = jwt.sign({ accountId, userId, username }, JWT_SECRET)
-    return res.json({ code: 200, message: '注册成功', accountId, userId, token })
+    // userId 保证不为 null
+    return res.json({ code: 200, message: '注册成功', accountId, userId: userId || accountId, token })
   } catch (err) {
     return res.status(500).json({ code: 500, message: err.message })
   }
@@ -96,12 +81,11 @@ app.post('/account/login', (req, res) => {
     if (!account) return res.json({ code: 404, message: '用户不存在' })
     const bcrypt = require('bcrypt')
     if (!bcrypt.compareSync(password, account.passwordHash)) return res.json({ code: 401, message: '密码错误' })
-    // 查找关联的 userId
+    // 查找关联的 userId，找不到就用 accountId 兜底
     const user = db.prepare('SELECT * FROM users WHERE deviceId LIKE ?').get(`%${username}%`)
-    const userId = user ? user.id : null
-    // 生成 JWT token（永久有效）
-    const jwt = require('jsonwebtoken')
+    const userId = user?.id || account.id
     const token = jwt.sign({ accountId: account.id, userId, username }, JWT_SECRET)
+    // userId 保证不为 null
     return res.json({ code: 200, message: '登录成功', accountId: account.id, userId, token })
   } catch (err) {
     return res.status(500).json({ code: 500, message: err.message })
@@ -190,8 +174,9 @@ app.post('/fall-report', (req, res) => {
 app.post('/location-sync', (req, res) => {
   try {
     const body = req.body
-    const { action, userId, latitude, longitude, accuracy, timestamp } = body
-    const elderId = body.elderId || body.data?.elderId
+    const { action, latitude, longitude, accuracy, timestamp } = body
+    const userId = body.userId || body.elderId || body.data?.elderId
+    const elderId = userId  // 统一：elderId/userId 都可以
 
     const db = getDb()
 
