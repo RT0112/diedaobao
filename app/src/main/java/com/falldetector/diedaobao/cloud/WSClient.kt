@@ -11,10 +11,9 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import okio.Buffer
 import okio.ByteString
 import org.json.JSONObject
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.util.concurrent.TimeUnit
 import com.falldetector.diedaobao.util.AppLogger
 
@@ -363,12 +362,11 @@ object WSClient {
                 put("fn", frameNum)
             }
             val headerBytes = header.toString().toByteArray(Charsets.UTF_8)
-            val buf = ByteBuffer.allocate(4 + headerBytes.size + jpegBytes.size)
-            buf.order(ByteOrder.BIG_ENDIAN)
-            buf.putInt(headerBytes.size)
-            buf.put(headerBytes)
-            buf.put(jpegBytes)
-            webSocket?.send(ByteString.of(*buf.array()))
+            val buf = Buffer()
+            buf.writeInt(headerBytes.size)
+            buf.write(headerBytes)
+            buf.write(jpegBytes)
+            webSocket?.send(buf.readByteString())
         } catch (e: Exception) {
             Log.e(TAG, "二进制帧发送失败: ${e.message}")
         }
