@@ -4,6 +4,9 @@
 const { WebSocketServer } = require('ws')
 const { getDb } = require('./db')
 
+// JWT 密钥（由 server.js 通过 initWS(server, jwtSecret) 传入）
+let JWT_SECRET = null
+
 // 连接管理：userId → WebSocket
 const clients = new Map()
 
@@ -14,8 +17,11 @@ let wss = null
 
 /**
  * 初始化 WebSocket 服务器，挂载到已有 HTTP server 上
+ * @param {object} server - HTTP server 实例
+ * @param {string} jwtSecret - JWT 密钥（由 server.js 传入）
  */
-function initWS(server) {
+function initWS(server, jwtSecret) {
+  JWT_SECRET = jwtSecret
   wss = new WebSocketServer({ server, path: '/ws' })
 
   wss.on('connection', (ws, req) => {
@@ -76,7 +82,7 @@ function handleMessage(ws, msg) {
 
   switch (type) {
     case 'auth':
-      handleAuth(ws, data)
+      handleAuth(ws, msg)  // 传完整 msg，包含 token
       break
 
     case 'ping':
@@ -94,9 +100,22 @@ function handleMessage(ws, msg) {
       break
 
     // --- 位置拉取请求（子女端→老人端）---
-    case 'location_request':
-      sendToUser(data?.elderId, { type: 'location_request', data: { guardianId: ws.userId, requestTime: Date.now() } })
+    case 'location_request': {
+      const locElderId = data?.elderId
+      if (!locElderId) break
+      // 优先WS推送
+      const locPushed = sendToUser(locElderId, { type: 'location_request', data: { guardianId: ws.userId, requestTime: Date.now() } })
+      // WS不在线时，写DB标记让老人端HTTP轮询拉取（降级保障）
+      if (!locPushed) {
+        try {
+          const db = getDb()
+          db.prepare('UPDATE users SET pullLocationRequest=?, pullLocationStatus=? WHERE id=?')
+            .run(Date.now(), 'pending', locElderId)
+          console.log(`[WS] location_request: WS离线，已写DB拉取标记 elderId=${locElderId}`)
+        } catch (e) { console.error('[WS] location_request DB降级失败:', e.message) }
+      }
       break
+    }
 
     // --- 远程协助请求（子女端→老人端）---
     case 'assist_request':
@@ -150,13 +169,29 @@ function handleMessage(ws, msg) {
 
 /**
  * 认证：绑定 userId 到 WebSocket 连接
+ * @param {object} msg - 完整消息对象，包含 token/data
  */
-function handleAuth(ws, data) {
-  if (!data || !data.userId) {
-    return wsSend(ws, { type: 'auth_result', success: false, message: '缺少 userId' })
-  }
+function handleAuth(ws, msg) {
+  // 支持两种认证方式：token（推荐）或 userId（兼容旧版）
+  // token 可以在 msg.token（新版）或 msg.data.token（旧版兼容）中
+  let userId = null
+  const token = msg.token || (msg.data && msg.data.token)
 
-  const { userId } = data
+  if (token) {
+    try {
+      const decoded = require('jsonwebtoken').verify(token, JWT_SECRET)
+      // 优先使用 token 中的 userId，但如果为 null 则尝试使用 msg.data.userId（guardian app 会传正确的 userId）
+      userId = decoded.userId || (msg.data && msg.data.userId) || decoded.accountId
+    } catch (e) {
+      return wsSend(ws, { type: 'auth_result', success: false, message: 'token 无效或已过期' })
+    }
+  } else if (msg.data && msg.data.userId) {
+    userId = msg.data.userId  // 兼容旧版 APP（无 token）
+  } else if (msg.userId) {
+    userId = msg.userId  // 兼容更旧的格式
+  } else {
+    return wsSend(ws, { type: 'auth_result', success: false, message: '缺少 userId 或 token' })
+  }
 
   // 如果该 userId 已有连接，踢掉旧的
   const existing = clients.get(userId)
@@ -167,7 +202,7 @@ function handleAuth(ws, data) {
   }
 
   ws.userId = userId
-  ws.role = data.role || 'elder'
+  ws.role = (msg.data && msg.data.role) || 'elder'
   clients.set(userId, ws)
 
   // 加入房间
@@ -246,7 +281,7 @@ function broadcastToRoom(senderId, message, excludeUserId) {
     elderIds.add(senderId)
   }
 
-  // 对于每个老人房间，向所有成员广播
+  // 对于每个老人房间，向所有成员广播（已包含老人自己 + 所有绑定家属，去重）
   for (const elderId of elderIds) {
     const roomMembers = rooms.get(elderId)
     if (!roomMembers) continue
@@ -256,15 +291,9 @@ function broadcastToRoom(senderId, message, excludeUserId) {
       sendToUser(memberId, message)
     }
   }
-
-  // 同时也向绑定到发送者（如果发送者是老人）的所有家属广播
-  if (sender?.role === 'elder') {
-    for (const g of guardians) {
-      if (g.familyId !== excludeUserId) {
-        sendToUser(g.familyId, message)
-      }
-    }
-  }
+  // ⚠️ 注意：下面这段是重复逻辑，已删除（第260-267行）
+  // 重复原因：elderIds 已经包含 senderId（老人），roomMembers 已经包含家属
+  // 如果保留下面这段，家属会收到**两次**同一条消息
 }
 
 /**

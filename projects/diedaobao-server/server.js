@@ -5,11 +5,13 @@ const express = require('express')
 const cors = require('cors')
 const compression = require('compression')
 const http = require('http')
+const jwt = require('jsonwebtoken')
 const { getDb, genId } = require('./db')
 const { initWS, getOnlineStats, isOnline, pushToRoom, sendToUser } = require('./ws')
 
 const app = express()
 const PORT = process.env.PORT || 3000
+const JWT_SECRET = 'diedaobao-secret-key-2024'  // 生产环境应改为环境变量
 
 app.use(cors())
 app.use(compression())
@@ -28,6 +30,23 @@ app.use((req, res, next) => {
   next()
 })
 
+// JWT 鉴权中间件（放行开放路径）
+const openPaths = ['/health', '/user-register', '/account/register', '/account/login', '/geofence', '/remote-assist']
+app.use((req, res, next) => {
+  if (req.method === 'GET' && req.path === '/health') return next()
+  if (req.method === 'POST' && openPaths.includes(req.path)) return next()
+  const authHeader = req.headers['authorization'] || ''
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : (req.query.token || '')
+  if (!token) return res.status(401).json({ code: 401, message: '未登录，请先登录' })
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET)
+    req.user = decoded
+    next()
+  } catch (e) {
+    return res.status(401).json({ code: 401, message: '登录已过期，请重新登录' })
+  }
+})
+
 // 健康检查
 app.get('/health', (req, res) => {
   const db = getDb()
@@ -40,7 +59,56 @@ app.get('/health', (req, res) => {
   }
 })
 
-// ========== user-register ==========
+// ========== account/register (APP调用路径) ==========
+app.post('/account/register', (req, res) => {
+  try {
+    const body = req.body
+    const { username, password, role } = body
+    if (!username || !password) return res.json({ code: 400, message: 'Missing username/password' })
+    const db = getDb()
+    const existing = db.prepare('SELECT * FROM accounts WHERE username=?').get(username)
+    if (existing) return res.json({ code: 409, message: '用户名已存在' })
+    const accountId = genId()
+    const passwordHash = require('bcrypt').hashSync(password, 10)
+    db.prepare('INSERT INTO accounts (id, username, passwordHash, createdAt) VALUES (?,?,?,?)').run(accountId, username, passwordHash, Date.now())
+    // 同时创建 users 记录
+    const deviceId = body.deviceId || `user_${Date.now()}`
+    const userId = genId()
+    db.prepare('INSERT INTO users (id, deviceId, name, phone, role, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?)')
+      .run(userId, deviceId, body.name || username, body.phone || '', role || 'elder', Date.now(), Date.now())
+    // 生成 JWT token（永久有效，无过期）
+    const jwt = require('jsonwebtoken')
+    const token = jwt.sign({ accountId, userId, username }, JWT_SECRET)
+    return res.json({ code: 200, message: '注册成功', accountId, userId, token })
+  } catch (err) {
+    return res.status(500).json({ code: 500, message: err.message })
+  }
+})
+
+// ========== account/login (APP调用路径) ==========
+app.post('/account/login', (req, res) => {
+  try {
+    const body = req.body
+    const { username, password, role } = body
+    if (!username || !password) return res.json({ code: 400, message: 'Missing username/password' })
+    const db = getDb()
+    const account = db.prepare('SELECT * FROM accounts WHERE username=?').get(username)
+    if (!account) return res.json({ code: 404, message: '用户不存在' })
+    const bcrypt = require('bcrypt')
+    if (!bcrypt.compareSync(password, account.passwordHash)) return res.json({ code: 401, message: '密码错误' })
+    // 查找关联的 userId
+    const user = db.prepare('SELECT * FROM users WHERE deviceId LIKE ?').get(`%${username}%`)
+    const userId = user ? user.id : null
+    // 生成 JWT token（永久有效）
+    const jwt = require('jsonwebtoken')
+    const token = jwt.sign({ accountId: account.id, userId, username }, JWT_SECRET)
+    return res.json({ code: 200, message: '登录成功', accountId: account.id, userId, token })
+  } catch (err) {
+    return res.status(500).json({ code: 500, message: err.message })
+  }
+})
+
+// ========== user-register (兼容旧路径) ==========
 app.post('/user-register', (req, res) => {
   try {
     const body = req.body
@@ -53,8 +121,6 @@ app.post('/user-register', (req, res) => {
       db.prepare(`UPDATE users SET name=COALESCE(?,name), phone=COALESCE(?,phone), role=COALESCE(?,role), updatedAt=? WHERE deviceId=?`)
         .run(name || existing.name, phone !== undefined ? phone : existing.phone, role || existing.role, Date.now(), deviceId)
       const updated = db.prepare('SELECT * FROM users WHERE deviceId=?').get(deviceId)
-      // 注册时清理旧绑定（防止重新注册后旧绑定残留）
-      db.prepare('DELETE FROM family_bindings WHERE elderId=?').run(updated.id)
       return res.json({ code: 200, message: 'User already exists (updated)', userId: updated.id, data: { id: updated.id, deviceId: updated.deviceId, name: updated.name, phone: updated.phone, role: updated.role } })
     }
 
@@ -71,7 +137,9 @@ app.post('/user-register', (req, res) => {
 app.post('/fall-report', (req, res) => {
   try {
     const { userId, timestamp, latitude, longitude, impactG, ffDuration, mlScore, physicalScore, weightedScore, decisionPath, sensorDataJson, accuracy } = req.body
-    if (!userId) return res.json({ code: 400, message: 'Missing userId' })
+    // v24.1: 兼容 elderId（老人端发送的字段名）
+    const elderId = req.body.elderId || userId
+    if (!elderId) return res.json({ code: 400, message: 'Missing userId or elderId' })
 
     const db = getDb()
     const id = genId()
@@ -79,22 +147,22 @@ app.post('/fall-report', (req, res) => {
 
     db.prepare(`INSERT INTO fall_events (id, userId, timestamp, latitude, longitude, impactG, ffDuration, mlScore, physicalScore, weightedScore, decisionPath, sensorDataJson, status, createdAt)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(id, userId, fallTs, latitude ?? null, longitude ?? null, impactG ?? 0, ffDuration ?? 0, mlScore ?? 0, physicalScore ?? 0, weightedScore ?? 0, decisionPath ?? '', sensorDataJson ?? '[]', 'pending', Date.now())
+      .run(id, elderId, fallTs, latitude ?? null, longitude ?? null, impactG ?? 0, ffDuration ?? 0, mlScore ?? 0, physicalScore ?? 0, weightedScore ?? 0, decisionPath ?? '', sensorDataJson ?? '[]', 'pending', Date.now())
 
     // 写入 lastFallEvent 到 users 表
     const lastFallEvent = JSON.stringify({ eventId: id, timestamp: fallTs, impactG: impactG ?? 0, mlScore: mlScore ?? 0, latitude: latitude ?? null, longitude: longitude ?? null })
-    db.prepare('UPDATE users SET lastFallEvent=?, updatedAt=? WHERE id=?').run(lastFallEvent, Date.now(), userId)
+    db.prepare('UPDATE users SET lastFallEvent=?, updatedAt=? WHERE id=?').run(lastFallEvent, Date.now(), elderId)
 
     // 获取绑定的家属数量
-    const bindings = db.prepare("SELECT id, familyId FROM family_bindings WHERE elderId=? AND status='active'").all(userId)
+    const bindings = db.prepare("SELECT id, familyId FROM family_bindings WHERE elderId=? AND status='active'").all(elderId)
 
     // v24: WS 实时推送跌倒事件给子女端
     const fallData = { eventId: id, timestamp: fallTs, impactG: impactG ?? 0, mlScore: mlScore ?? 0, latitude: latitude ?? null, longitude: longitude ?? null }
     // 优先用 pushToRoom（依赖rooms），同时直接查库推送（防止rooms未初始化）
-    let wsPushed = pushToRoom(userId, { type: 'fall_event', data: fallData })
+    let wsPushed = pushToRoom(elderId, { type: 'fall_event', data: fallData })
     // 如果 pushToRoom 推送失败（rooms为空），直接查库推送
     if (wsPushed === 0) {
-      const bindings = db.prepare('SELECT familyId FROM family_bindings WHERE elderId=? AND status=?').all(userId, 'active')
+      const bindings = db.prepare('SELECT familyId FROM family_bindings WHERE elderId=? AND status=?').all(elderId, 'active')
       for (const b of bindings) {
         if (sendToUser(b.familyId, { type: 'fall_event', data: fallData })) wsPushed++
       }
@@ -102,17 +170,17 @@ app.post('/fall-report', (req, res) => {
     }
     // 同时推送 location_update（位置同步）
     if (latitude && longitude) {
-      pushToRoom(userId, { type: 'location_update', data: { latitude, longitude, accuracy: accuracy || 0, timestamp: fallTs } })
+      pushToRoom(elderId, { type: 'location_update', data: { latitude, longitude, accuracy: accuracy || 0, timestamp: fallTs } })
       // 如果 pushToRoom 失败，直接推送给家属
       const locData = { latitude: parseFloat(latitude), longitude: parseFloat(longitude), accuracy: accuracy || 0, timestamp: fallTs }
-      const locBindings = db.prepare('SELECT familyId FROM family_bindings WHERE elderId=? AND status=?').all(userId, 'active')
+      const locBindings = db.prepare('SELECT familyId FROM family_bindings WHERE elderId=? AND status=?').all(elderId, 'active')
       for (const b of locBindings) {
         sendToUser(b.familyId, { type: 'location_update', data: locData })
       }
     }
     console.log(`[fall-report] WS推送: ${wsPushed}个家属在线`)
 
-    return res.json({ code: 200, message: 'Fall reported', eventId: id, notifiedFamily: bindings.length, wsPushed })
+    return res.json({ code: 200, message: 'Fall reported', eventId: id, notifiedFamily: bindings.length, wsPushed, elderId })
   } catch (err) {
     return res.status(500).json({ code: 500, message: err.message })
   }
@@ -192,6 +260,7 @@ app.post('/bind-family', (req, res) => {
     const body = req.body
     const { action, bindCode, guardianId, elderId, familyId, relation } = body
     const db = getDb()
+    console.log(`[bind-family] action=${action}, bindCode=${bindCode}, guardianId=${guardianId}, familyId=${familyId}, elderId=${elderId}, body=`, JSON.stringify(body))
 
     if (action === 'generateCode') {
       const code = Math.random().toString().slice(2, 8)
@@ -222,9 +291,6 @@ app.post('/bind-family', (req, res) => {
 
     db.prepare('UPDATE bind_codes SET used=1 WHERE id=?').run(bindCodeRow.id)
 
-    // 绑定前删除该 elderId 的旧绑定（防止重复绑定）
-    db.prepare('DELETE FROM family_bindings WHERE elderId=?').run(bindCodeRow.elderId)
-    
     const elderRow = db.prepare('SELECT name FROM users WHERE id=?').get(bindCodeRow.elderId)
     const bindingId = genId()
     db.prepare('INSERT INTO family_bindings (id, elderId, familyId, relation, status, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?)')
@@ -344,15 +410,16 @@ app.post('/geofence', (req, res) => {
       const breaches = (body.breaches || []).map(b => String(b).slice(0, 50))
       const elderName = String(body.elderName || '老人').slice(0, 20)
       const timestamp = body.timestamp || Date.now()
-      
-      // 查找绑定关系，获取 guardianId
-      const binding = db.prepare('SELECT * FROM family_bindings WHERE elderId=? LIMIT 1').get(elderId)
-      if (binding) {
+
+      // 查找所有绑定关系，推送给所有家属
+      const bindings = db.prepare("SELECT familyId FROM family_bindings WHERE elderId=? AND status='active'").all(elderId)
+      let pushed = 0
+      for (const binding of bindings) {
         const msg = { type: 'geofence_breach', data: { elderId, elderName, breaches, timestamp } }
-        const pushed = sendToUser(binding.guardianId, msg)
-        console.log(`围栏越界 WS 推送 → ${binding.guardianId}: ${JSON.stringify(msg)}, pushed=${pushed}`)
+        if (sendToUser(binding.familyId, msg)) pushed++
       }
-      return res.json({ success: true })
+      console.log(`[geofence/breach_notify] 围栏越界 WS 推送 → ${pushed}个家属, elderId=${elderId}, breaches=${JSON.stringify(breaches)}`)
+      return res.json({ success: true, pushed })
     }
 
     return res.json({ success: false, message: `未知操作: ${action}` })
@@ -686,7 +753,7 @@ app.post('/restart', (req, res) => {
 const server = http.createServer(app)
 
 // 初始化 WebSocket（挂载在同一个 HTTP server 上）
-initWS(server)
+initWS(server, JWT_SECRET)
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🎉 跌倒宝服务器已启动`)
