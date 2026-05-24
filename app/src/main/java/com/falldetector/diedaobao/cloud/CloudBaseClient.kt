@@ -1,6 +1,8 @@
 package com.falldetector.diedaobao.cloud
 
 import android.content.Context
+import android.provider.Settings
+import com.falldetector.diedaobao.FallDetectionApp
 import com.falldetector.diedaobao.config.ServerConfig
 import com.falldetector.diedaobao.util.AppLogger
 import android.util.Log
@@ -93,8 +95,127 @@ object CloudBaseClient {
         prefs.edit()
             .remove("user_id")
             .remove("elder_id")
+            .remove("account_id")
+            .remove("logged_in")
             .apply()
         Log.i(TAG, "Registration reset, will re-register on next launch")
+    }
+    
+    // ========== 账号登录注册 ==========
+    
+    private const val PREFS_NAME = "cloudbase"
+    private const val KEY_ACCOUNT_ID = "account_id"
+    private const val KEY_LOGGED_IN = "logged_in"
+    private const val KEY_USERNAME = "username"
+    private const val KEY_TOKEN = "jwt_token"
+    
+    fun isLoggedIn(): Boolean {
+        val context = FallDetectionApp.instance
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_LOGGED_IN, false)
+    }
+    
+    fun getAccountId(): String? {
+        val context = FallDetectionApp.instance
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_ACCOUNT_ID, null)
+    }
+    
+    fun getUsername(): String {
+        val context = FallDetectionApp.instance
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_USERNAME, "") ?: ""
+    }
+    
+    fun saveLoginInfo(accountId: String?, userId: String?, username: String, token: String? = null) {
+        val context = FallDetectionApp.instance
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val editor = prefs.edit()
+        if (accountId != null) editor.putString(KEY_ACCOUNT_ID, accountId)
+        if (userId != null && userId != "null" && userId.isNotEmpty()) {
+            editor.putString("user_id", userId)
+            editor.putString("elder_id", userId)
+            cachedUserId = userId
+        }
+        if (token != null) editor.putString(KEY_TOKEN, token)
+        editor.putString(KEY_USERNAME, username)
+        editor.putBoolean(KEY_LOGGED_IN, true)
+        editor.apply()
+    }
+    
+    fun logout() {
+        val context = FallDetectionApp.instance
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val editor = prefs.edit()
+        editor.remove(KEY_ACCOUNT_ID)
+        editor.remove(KEY_LOGGED_IN)
+        editor.remove(KEY_USERNAME)
+        editor.remove(KEY_TOKEN)
+        editor.remove("user_id")
+        editor.remove("elder_id")
+        editor.apply()
+        cachedUserId = null
+    }
+    
+    // 注册账号
+    suspend fun registerAccount(username: String, password: String, deviceId: String): Result<String> {
+        return try {
+            val body = JSONObject().apply {
+                put("username", username)
+                put("password", password)
+                put("role", "elder")
+                put("deviceId", deviceId)
+            }
+            
+            val response = callFunction("account/register", body)
+            if (response != null && response.optInt("code") == 200) {
+                val accountId = response.optString("accountId")
+                val userId = response.optString("userId")
+                val token = response.optString("token")
+                saveLoginInfo(accountId, userId, username, token)
+                if (userId.isNotEmpty()) {
+                    saveUserIdToPrefs(FallDetectionApp.instance, userId)
+                    saveElderIdToPrefs(FallDetectionApp.instance, userId)
+                }
+                Result.success(accountId)
+            } else {
+                val msg = response?.optString("message") ?: "Registration failed"
+                Result.failure(Exception(msg))
+            }
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "registerAccount failed: ${e.message}")
+            Result.failure(e)
+        }
+    }
+    
+    // 登录账号
+    suspend fun loginAccount(username: String, password: String): Result<String> {
+        return try {
+            val body = JSONObject().apply {
+                put("username", username)
+                put("password", password)
+                put("role", "elder")
+            }
+
+            val response = callFunction("account/login", body)
+            if (response != null && response.optInt("code") == 200) {
+                val accountId = response.optString("accountId")
+                val userId = response.optString("userId")
+                val token = response.optString("token")
+                saveLoginInfo(accountId, userId, username, token)
+                if (userId.isNotEmpty()) {
+                    saveUserIdToPrefs(FallDetectionApp.instance, userId)
+                    saveElderIdToPrefs(FallDetectionApp.instance, userId)
+                }
+                Result.success(accountId)
+            } else {
+                val msg = response?.optString("message") ?: "Login failed"
+                Result.failure(Exception(msg))
+            }
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "loginAccount failed: ${e.message}")
+            Result.failure(e)
+        }
     }
     
     /**
@@ -142,13 +263,17 @@ object CloudBaseClient {
     
     /**
      * 上报跌倒事件
-     * 
+     *
      * @param latitude 纬度
      * @param longitude 经度
      * @param impactG 冲击力（g）
      * @param ffDuration FF持续时间（ms）
      * @param mlScore ML 分数
      * @param physicalScore 物理分数
+     * @param weightedScore 加权评分
+     * @param decisionPath 决策路径
+     * @param sensorDataJson 传感器原始数据JSON
+     * @param feedRate 传感器帧率
      * @return 是否成功
      */
     suspend fun reportFall(
@@ -158,7 +283,11 @@ object CloudBaseClient {
         impactG: Float,
         ffDuration: Long,
         mlScore: Float,
-        physicalScore: Float
+        physicalScore: Float,
+        weightedScore: Float = 0f,
+        decisionPath: String = "",
+        sensorDataJson: String = "[]",
+        feedRate: Float = 0f
     ): Boolean {
         val userId = cachedUserId ?: run {
             val prefs = context.getSharedPreferences("cloudbase", Context.MODE_PRIVATE)
@@ -172,7 +301,7 @@ object CloudBaseClient {
         Log.w(TAG, "📡 reportFall: userId=$userId, lat=$latitude, lng=$longitude, impactG=$impactG, mlScore=$mlScore")
         
         val body = JSONObject().apply {
-            put("userId", userId)
+            put("elderId", userId)  // P0-2 修复：服务端解析用 elderId
             // v0.46: 0.0 表示未获取到位置，不传或传null，避免子女端显示"0.0000, 0.0000"
             if (latitude != 0.0 && longitude != 0.0) {
                 put("latitude", latitude)
@@ -183,6 +312,11 @@ object CloudBaseClient {
             put("mlScore", mlScore.toDouble())
             put("physicalScore", physicalScore.toDouble())
             put("timestamp", System.currentTimeMillis())
+            // v0.47: 完整检测数据
+            put("weightedScore", weightedScore.toDouble())
+            put("decisionPath", decisionPath)
+            put("sensorDataJson", sensorDataJson)
+            put("feedRate", feedRate.toDouble())
         }
         
         Log.w(TAG, "📡 reportFall: 请求体=${body.toString().take(200)}")
@@ -217,7 +351,7 @@ object CloudBaseClient {
         }
         
         val body = JSONObject().apply {
-            put("userId", userId)
+            put("elderId", userId)  // P0-2 修复：服务端解析用 elderId
             put("latitude", latitude)
             put("longitude", longitude)
             put("timestamp", System.currentTimeMillis())
@@ -235,7 +369,7 @@ object CloudBaseClient {
     }
 
     /**
-     * v21: 立即上传当前位置（WS收到位置请求时调用）
+     * v25: 立即上传当前位置（WS收到位置请求时调用）
      * 获取最新GPS位置并上传到服务器 + WS推送给子女端
      */
     suspend fun uploadLocationNow(context: Context): Boolean {
@@ -245,42 +379,60 @@ object CloudBaseClient {
         } ?: return false
 
         return try {
-            // v23: 强制刷新位置 — requestSingleUpdate + 5秒超时，避免lastKnown返回null或旧位置
+            // v25: 同时请求GPS+NETWORK，谁先返回用谁，超时10秒给GPS更多时间
             val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? android.location.LocationManager
             var lat = 0.0
             var lng = 0.0
             var accuracy = 0f
 
             if (locationManager != null) {
-                // 先尝试强制刷新（5秒超时）
-                val freshLocation = try {
-                    withTimeout(5000) {
-                        suspendCancellableCoroutine { cont: kotlinx.coroutines.CancellableContinuation<android.location.Location?> ->
-                            val listener = object : android.location.LocationListener {
+                // v25: 尝试强制刷新（10秒超时），GPS+NETWORK谁先返回用谁
+                // 避免使用cont.isActive，改用AtomicBoolean防止协程取消时崩溃
+                var freshLocation: android.location.Location? = null
+                try {
+                    withTimeout(10_000) {
+                        suspendCancellableCoroutine { cont: kotlinx.coroutines.CancellableContinuation<Boolean> ->
+                            var listener: android.location.LocationListener? = null
+                            listener = object : android.location.LocationListener {
+                                private var handled = false
                                 override fun onLocationChanged(loc: android.location.Location) {
-                                    locationManager.removeUpdates(this)
-                                    if (cont.isActive) cont.resumeWith(Result.success(loc))
+                                    if (!handled) {
+                                        handled = true
+                                        try { locationManager.removeUpdates(listener!!) } catch (_: Exception) {}
+                                        freshLocation = loc
+                                        if (cont.isActive) cont.resumeWith(Result.success(true))
+                                    }
                                 }
                                 override fun onProviderEnabled(provider: String) {}
                                 override fun onProviderDisabled(provider: String) {}
                             }
                             cont.invokeOnCancellation {
-                                try { locationManager.removeUpdates(listener) } catch (_: Exception) {}
+                                try {
+                                    listener?.let { locationManager.removeUpdates(it) }
+                                } catch (_: Exception) {}
+                            }
+                            try {
+                                locationManager.requestSingleUpdate(
+                                    android.location.LocationManager.GPS_PROVIDER,
+                                    listener!!,
+                                    android.os.Looper.getMainLooper()
+                                )
+                            } catch (e: Exception) {
+                                AppLogger.w(TAG, "GPS provider不可用: ${e.message}")
                             }
                             try {
                                 locationManager.requestSingleUpdate(
                                     android.location.LocationManager.NETWORK_PROVIDER,
-                                    listener,
+                                    listener!!,
                                     android.os.Looper.getMainLooper()
                                 )
                             } catch (e: Exception) {
-                                if (cont.isActive) cont.resumeWith(Result.success(null))
+                                AppLogger.w(TAG, "NETWORK provider不可用: ${e.message}")
                             }
                         }
                     }
                 } catch (_: TimeoutCancellationException) {
-                    AppLogger.w(TAG, "uploadLocationNow: requestSingleUpdate超时，fallback到lastKnown")
-                    null
+                    AppLogger.w(TAG, "uploadLocationNow: 10秒超时，fallback到lastKnown")
                 }
 
                 val location = freshLocation
@@ -291,7 +443,7 @@ object CloudBaseClient {
                     lat = location.latitude
                     lng = location.longitude
                     accuracy = location.accuracy
-                    AppLogger.i(TAG, "uploadLocationNow: 位置来源=${if (freshLocation != null) "fresh" else "lastKnown"}, lat=$lat, lng=$lng")
+                    AppLogger.i(TAG, "uploadLocationNow: 位置来源=${if (freshLocation != null) "fresh(${location.provider})" else "lastKnown(${location.provider})"}, lat=$lat, lng=$lng")
                 }
             }
 
@@ -305,6 +457,25 @@ object CloudBaseClient {
                 }
             }
 
+            // WS推送位置更新给子女端（在HTTP上传之前，确保即使HTTP失败也能通知子女端）
+            // 注：即使位置为0,0，也尝试推送缓存位置
+            val wsLat = if (lat != 0.0 || lng != 0.0) lat else {
+                val prefs = context.getSharedPreferences("cloudbase", Context.MODE_PRIVATE)
+                prefs.getString("last_lat", null)?.toDoubleOrNull() ?: 0.0
+            }
+            val wsLng = if (lat != 0.0 || lng != 0.0) lng else {
+                val prefs = context.getSharedPreferences("cloudbase", Context.MODE_PRIVATE)
+                prefs.getString("last_lng", null)?.toDoubleOrNull() ?: 0.0
+            }
+            if (wsLat != 0.0 || wsLng != 0.0) {
+                try {
+                    com.falldetector.diedaobao.cloud.WSClient.pushLocationUpdate(wsLat, wsLng, accuracy)
+                    AppLogger.i(TAG, "uploadLocationNow: WS推送位置 lat=$wsLat, lng=$wsLng")
+                } catch (e: Exception) {
+                    AppLogger.e(TAG, "WS推送位置失败: ${e.message}")
+                }
+            }
+
             if (lat == 0.0 && lng == 0.0) {
                 AppLogger.w(TAG, "uploadLocationNow: 无可用位置")
                 return false
@@ -312,17 +483,14 @@ object CloudBaseClient {
 
             // 上传到服务器
             val body = JSONObject().apply {
-                put("userId", userId)
+                put("elderId", userId)  // P0-2 修复：服务端解析用 elderId
                 put("latitude", lat)
                 put("longitude", lng)
-                put("accuracy", accuracy)
+                put("accuracy", accuracy.toDouble())
                 put("timestamp", System.currentTimeMillis())
             }
             val response = callFunction("location-sync", body)
             val httpOk = response != null && response.optBoolean("success", false)
-
-            // WS推送位置更新给子女端
-            com.falldetector.diedaobao.cloud.WSClient.pushLocationUpdate(lat, lng, accuracy)
 
             // 缓存位置
             val prefs = context.getSharedPreferences("cloudbase", Context.MODE_PRIVATE)
@@ -349,9 +517,7 @@ object CloudBaseClient {
         
         val body = JSONObject().apply {
             put("action", "generateCode")
-            put("data", JSONObject().apply {
-                put("elderId", userId)
-            })
+            put("elderId", userId)
         }
         
         return try {
@@ -534,10 +700,16 @@ object CloudBaseClient {
     private suspend fun callFunction(functionName: String, body: JSONObject): JSONObject? {
         val url = "$BASE_URL/$functionName"
         Log.d(TAG, "🌐 callFunction: POST $url")
-        val request = Request.Builder()
+        val context = FallDetectionApp.instance
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val token = prefs.getString(KEY_TOKEN, null)
+        val requestBuilder = Request.Builder()
             .url(url)
             .post(body.toString().toRequestBody(jsonMediaType))
-            .build()
+        if (!token.isNullOrEmpty()) {
+            requestBuilder.addHeader("Authorization", "Bearer $token")
+        }
+        val request = requestBuilder.build()
         
         return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
@@ -570,7 +742,7 @@ object CloudBaseClient {
         val userId = prefs.getString("user_id", null) ?: return false
         val body = JSONObject().apply {
             put("action", "breach_notify")
-            put("userId", userId)
+            put("elderId", userId)  // P0-3 修复：服务端解析用 elderId
             put("elderName", elderName)
             put("breaches", JSONArray(breaches))
             put("timestamp", System.currentTimeMillis())

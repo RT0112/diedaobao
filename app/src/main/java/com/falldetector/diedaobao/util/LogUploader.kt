@@ -193,9 +193,15 @@ object LogUploader : Thread.UncaughtExceptionHandler {
             conn.connectTimeout = 8000
             conn.readTimeout = 8000
             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            // 加 JWT token
+            val prefs = appContext.getSharedPreferences("cloudbase", Context.MODE_PRIVATE)
+            val token = prefs.getString("jwt_token", null)
+            if (!token.isNullOrEmpty()) {
+                conn.setRequestProperty("Authorization", "Bearer $token")
+            }
             conn.doOutput = true
             conn.outputStream.write(json.toByteArray(StandardCharsets.UTF_8))
-            
+
             val responseCode = conn.responseCode
             if (responseCode == HttpsURLConnection.HTTP_OK || responseCode == 200) {
                 conn.inputStream.bufferedReader().readText()

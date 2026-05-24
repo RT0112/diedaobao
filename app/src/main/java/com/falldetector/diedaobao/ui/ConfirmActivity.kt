@@ -48,6 +48,12 @@ class ConfirmActivity : AppCompatActivity() {
     private var physScore = 0f
     private var impactG = 0f
     private var fallHeight = 0f
+    // v0.47: 完整检测数据
+    private var ffTimeMs: Long = 0L
+    private var weightedScore = 0f
+    private var decisionPath = ""
+    private var sensorDataJson = "[]"
+    private var feedRate = 0f
 
     private var alarmSoundEnabled = true
     private var alarmVibrateEnabled = true
@@ -95,16 +101,25 @@ class ConfirmActivity : AppCompatActivity() {
         physScore = intent.getFloatExtra("phys_score", 0f)
         impactG = intent.getFloatExtra("impact_g", 0f)
         fallHeight = intent.getFloatExtra("fall_height", 0f)
+        // v0.47: 完整检测数据
+        ffTimeMs = intent.getLongExtra("ff_time_ms", 0L)
+        weightedScore = intent.getFloatExtra("weighted_score", 0f)
+        decisionPath = intent.getStringExtra("decision_path") ?: ""
+        sensorDataJson = intent.getStringExtra("sensor_data_json") ?: "[]"
+        feedRate = intent.getFloatExtra("feed_rate", 0f)
         postureAngle = if (postureFromIntent > 0f) postureFromIntent else estimatePostureFromPeak(peakAcc)
 
         // v0.46: 优先使用FallDetectionService传来的位置（比onCreate里取getLastKnownLocation更可靠）
         val latFromService = intent.getDoubleExtra("latitude", Double.NaN)
         val lngFromService = intent.getDoubleExtra("longitude", Double.NaN)
-        if (!latFromService.isNaN() && !lngFromService.isNaN()) {
+        if (!latFromService.isNaN() && !lngFromService.isNaN()
+            && !(latFromService == 0.0 && lngFromService == 0.0)) {
             latitude = latFromService
             longitude = lngFromService
             hasLocationFromService = true
             Log.i(TAG, "从Service获取位置: $latitude, $longitude")
+        } else if (latFromService == 0.0 && lngFromService == 0.0) {
+            Log.w(TAG, "Service位置为(0,0)，将使用GPS获取")
         }
 
         AppLogger.w(TAG, "===== ConfirmActivity 启动 =====")
@@ -260,9 +275,13 @@ class ConfirmActivity : AppCompatActivity() {
                     latitude = latitude,
                     longitude = longitude,
                     impactG = impactG,
-                    ffDuration = 0L, // TODO: 从 FallDetector 传递
+                    ffDuration = ffTimeMs,
                     mlScore = mlProbability,
-                    physicalScore = physScore
+                    physicalScore = physScore,
+                    weightedScore = weightedScore,
+                    decisionPath = decisionPath,
+                    sensorDataJson = sensorDataJson,
+                    feedRate = feedRate
                 )
                 Log.w(TAG, "CloudBase上报结果: reported=$reported")
             }

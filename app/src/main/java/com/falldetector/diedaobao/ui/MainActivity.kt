@@ -122,7 +122,7 @@ class MainActivity : AppCompatActivity() {
                 R.id.nav_test1 -> Test1Fragment()
                 R.id.nav_history -> HistoryFragment()
                 R.id.nav_contacts -> ContactsFragment()
-                R.id.nav_settings -> SettingsFragment()
+                R.id.nav_profile -> ProfileFragment()
                 else -> HomeFragment()
             }
             supportFragmentManager.beginTransaction()

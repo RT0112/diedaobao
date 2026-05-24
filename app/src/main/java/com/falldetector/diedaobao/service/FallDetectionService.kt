@@ -61,6 +61,13 @@ class FallDetectionService : Service() {
         
         fun getDecisionLog(): String =
             _currentInstance?.fallDetector?.decisionLog?.value ?: ""
+
+        // P0-4 修复：单例 OkHttpClient，避免每次围栏越界都 new 一个线程池导致 OOM
+        private val httpClient by lazy {
+            okhttp3.OkHttpClient.Builder()
+                .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+        }
     }
 
     private val TAG = "FallDetectionService"
@@ -148,7 +155,10 @@ class FallDetectionService : Service() {
         
         // 启动远程协助轮询（Service级别，即使App在后台也能响应）
         startRemoteAssistPolling()
-        
+
+        // WS 位置请求由 FallDetectionApp 全局监听处理（LocationRequest → uploadLocationNow）
+        // HTTP 降级由 startPullPolling() 中的 pollPullRequest 负责
+
         return START_STICKY
     }
 
@@ -271,6 +281,12 @@ class FallDetectionService : Service() {
                                     putExtra("phys_score", result.physScore)
                                     putExtra("impact_g", result.impactG)
                                     putExtra("fall_height", result.fallHeight)
+                                    // v0.47: 完整检测数据
+                                    putExtra("ff_time_ms", result.ffTimeMs)
+                                    putExtra("weighted_score", result.weightedScore)
+                                    putExtra("decision_path", result.decisionPath)
+                                    putExtra("sensor_data_json", result.sensorDataJson)
+                                    putExtra("feed_rate", result.feedRate)
                                     // v0.46: 传入服务已知的最新位置，避免ConfirmActivity取不到GPS
                                     lastGoodLocation?.let { loc ->
                                         putExtra("latitude", loc.latitude)
@@ -320,6 +336,21 @@ class FallDetectionService : Service() {
                 putExtra("confidence", result.confidence)
                 putExtra("detection_method", result.detectionMethod)
                 putExtra("ml_probability", result.mlProbability)
+                // v0.29.6: 新增详细信息（供微信通知）
+                putExtra("phys_score", result.physScore)
+                putExtra("impact_g", result.impactG)
+                putExtra("fall_height", result.fallHeight)
+                // v0.47: 完整检测数据
+                putExtra("ff_time_ms", result.ffTimeMs)
+                putExtra("weighted_score", result.weightedScore)
+                putExtra("decision_path", result.decisionPath)
+                putExtra("sensor_data_json", result.sensorDataJson)
+                putExtra("feed_rate", result.feedRate)
+                // v0.46: 传入服务已知的最新位置
+                lastGoodLocation?.let { loc ->
+                    putExtra("latitude", loc.latitude)
+                    putExtra("longitude", loc.longitude)
+                }
             }
             val fullScreenPendingIntent = PendingIntent.getActivity(
                 this, 0, fullScreenIntent,
@@ -824,15 +855,16 @@ class FallDetectionService : Service() {
      * 直接用OkHttp发text消息，无需额外依赖
      */
     private fun notifyGuardianOfBreach(fenceName: String, distance: Double) {
+        // 企微通知（原逻辑，独立try-catch）
         serviceScope.launch(Dispatchers.IO) {
             try {
                 val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
                 val webhookUrl = prefs.getString("webhook_url", "") ?: ""
                 if (webhookUrl.isEmpty()) {
-                    AppLogger.w(TAG, "企微Webhook未配置，跳过围栏越界通知")
+                    AppLogger.w(TAG, "企微Webhook未配置，跳过企微通知")
                     return@launch
                 }
-
+                // ... 企微发送逻辑不变 ...
                 val timeStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.CHINA)
                     .format(java.util.Date())
                 val content = buildString {
@@ -857,16 +889,18 @@ class FallDetectionService : Service() {
                     .post(body)
                     .build()
 
-                val client = okhttp3.OkHttpClient.Builder()
-                    .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
-                    .build()
-                val response = client.newCall(request).execute()
-                Log.i(TAG, "围栏越界企微通知: ${response.code}")
+                // P0-4 修复：用 companion object 单例 + response.use 防泄漏
+                val response = httpClient.newCall(request).execute()
+                response.use {
+                    Log.i(TAG, "围栏越界企微通知: ${it.code}")
+                }
             } catch (e: Exception) {
-                AppLogger.e(TAG, "围栏越界通知发送失败: ${e.message}")
+                AppLogger.e(TAG, "企微通知发送失败: ${e.message}")
             }
+        }
 
-            // 同时通过 WebSocket 推送给子女端 App
+        // 【修复】独立协程推送给子女端 App，不再受企微通知影响
+        serviceScope.launch(Dispatchers.IO) {
             try {
                 val elderName = getSharedPreferences("cloudbase", Context.MODE_PRIVATE)
                     .getString("elder_name", "老人") ?: "老人"

@@ -204,11 +204,6 @@ class SettingsFragment : Fragment() {
         binding.btnAbout.setOnClickListener {
             showAboutDialog()
         }
-
-        // ========== 重置账号 ==========
-        binding.btnResetAccount.setOnClickListener {
-            showResetConfirm()
-        }
     }
 
     // ========== 权限录制管理 ==========
@@ -434,30 +429,6 @@ class SettingsFragment : Fragment() {
             )
             .setPositiveButton("好的", null)
             .show()
-    }
-
-    // ========== 重置账号 ==========
-    private fun showResetConfirm() {
-        AlertDialog.Builder(requireContext())
-            .setTitle("重置账号")
-            .setMessage("确定要清除本地注册信息吗？\n\n清除后将自动退出，需要重新注册登录。\n\n此操作不会删除云端数据。")
-            .setPositiveButton("清除") { _, _ ->
-                resetAccount()
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
-    private fun resetAccount() {
-        try {
-            val prefs = requireContext().getSharedPreferences("cloudbase", Context.MODE_PRIVATE)
-            prefs.edit().clear().apply()
-            Toast.makeText(requireContext(), "已清除账号信息", Toast.LENGTH_SHORT).show()
-            startActivity(Intent(requireContext(), MainActivity::class.java))
-            activity?.finish()
-        } catch (e: Exception) {
-            Toast.makeText(requireContext(), "清除失败: ${e.message}", Toast.LENGTH_SHORT).show()
-        }
     }
 
     private fun getContacts(): List<com.falldetector.diedaobao.data.Contact> {

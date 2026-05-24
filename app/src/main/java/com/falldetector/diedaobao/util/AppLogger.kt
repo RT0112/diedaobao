@@ -150,6 +150,14 @@ object AppLogger {
             conn.connectTimeout = 5000
             conn.readTimeout = 5000
             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            // 加 JWT token
+            if (this::appContext.isInitialized) {
+                val prefs = appContext.getSharedPreferences("cloudbase", Context.MODE_PRIVATE)
+                val token = prefs.getString("jwt_token", null)
+                if (!token.isNullOrEmpty()) {
+                    conn.setRequestProperty("Authorization", "Bearer $token")
+                }
+            }
             conn.doOutput = true
             conn.outputStream.write(json.toByteArray(StandardCharsets.UTF_8))
 

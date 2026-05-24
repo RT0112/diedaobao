@@ -10,8 +10,8 @@
         <domain includeSubdomains="false">192.168.0.0</domain>
         <domain includeSubdomains="false">10.0.0.0</domain>
     </domain-config>
-    <!-- 允许Cloudflare Tunnel内网穿透域名 -->
+    <!-- 允许ngrok固定域名HTTPS -->
     <domain-config cleartextTrafficPermitted="false">
-        <domain includeSubdomains="true">trycloudflare.com</domain>
+        <domain includeSubdomains="true">ngrok-free.dev</domain>
     </domain-config>
 </network-security-config>

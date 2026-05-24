@@ -6,11 +6,9 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.util.Log
 import android.widget.Toast
 import com.falldetector.diedaobao.util.AppLogger
 import androidx.appcompat.app.AlertDialog
@@ -40,7 +38,6 @@ class HomeFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        setupProfileSection()
         setupGuardianSection()
         setupBindCodeSection()
 
@@ -56,145 +53,6 @@ class HomeFragment : Fragment() {
         if (CloudBaseClient.isRegistered(requireContext())) {
             setupRemoteAssist()
         }
-    }
-
-    // ==================== 个人信息区域 ====================
-
-    private fun setupProfileSection() {
-        val isRegistered = CloudBaseClient.isRegistered(requireContext())
-
-        if (isRegistered) {
-            showRegisteredState()
-        } else {
-            showNotRegisteredState()
-        }
-
-        // 注册按钮
-        binding.btnRegister.setOnClickListener {
-            val name = binding.etName.text.toString().trim()
-            val phone = binding.etPhone.text.toString().trim()
-
-            if (name.isEmpty()) {
-                Toast.makeText(requireContext(), "请输入姓名", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            if (phone.isEmpty()) {
-                Toast.makeText(requireContext(), "请输入手机号", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-
-            performRegister(name, phone)
-        }
-
-        // 修改信息按钮
-        binding.btnEditProfile.setOnClickListener {
-            showEditProfileDialog()
-        }
-    }
-
-    private fun showNotRegisteredState() {
-        binding.layoutNotRegistered.visibility = View.VISIBLE
-        binding.layoutRegistered.visibility = View.GONE
-        binding.cardBind.visibility = View.GONE
-    }
-
-    private fun showRegisteredState() {
-        binding.layoutNotRegistered.visibility = View.GONE
-        binding.layoutRegistered.visibility = View.VISIBLE
-        binding.cardBind.visibility = View.VISIBLE
-
-        // 显示用户名和手机号
-        val prefs = requireContext().getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
-        val userName = prefs.getString("user_name", "") ?: ""
-        val userPhone = prefs.getString("user_phone", "") ?: ""
-        binding.tvUserName.text = userName.ifEmpty { "用户" }
-        binding.tvUserPhone.text = userPhone.ifEmpty { "" }
-
-        // 初始化绑定码
-        setupBindCodeSection()
-    }
-
-    private fun performRegister(name: String, phone: String) {
-        val rawDeviceId = Settings.Secure.getString(requireContext().contentResolver, Settings.Secure.ANDROID_ID)
-        val deviceId = "elder_$rawDeviceId"  // 区分同设备双App
-
-        binding.btnRegister.isEnabled = false
-        binding.btnRegister.text = "注册中..."
-
-        viewLifecycleOwner.lifecycleScope.launch {
-            val userId = CloudBaseClient.registerUser(
-                context = requireContext(),
-                deviceId = deviceId,
-                name = name,
-                phone = phone
-            )
-
-            binding.btnRegister.isEnabled = true
-            binding.btnRegister.text = "立即注册"
-
-            if (userId != null) {
-                // 保存用户名和手机号
-                val prefs = requireContext().getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
-                prefs.edit()
-                    .putString("user_name", name)
-                    .putString("user_phone", phone)
-                    .apply()
-
-                Toast.makeText(requireContext(), "注册成功！", Toast.LENGTH_SHORT).show()
-                showRegisteredState()
-            } else {
-                Toast.makeText(requireContext(), "注册失败，请检查网络", Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-
-    private fun showEditProfileDialog() {
-        val prefs = requireContext().getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
-        val currentName = prefs.getString("user_name", "") ?: ""
-        val currentPhone = prefs.getString("user_phone", "") ?: ""
-
-        // 用 Dialog 修改
-        val dialogView = LayoutInflater.from(requireContext()).inflate(
-            android.R.layout.simple_list_item_2, null
-        )
-        // 简化：用 AlertDialog + EditText
-        val nameEdit = android.widget.EditText(requireContext()).apply {
-            hint = "姓名"
-            setText(currentName)
-            setSingleLine()
-        }
-        val phoneEdit = android.widget.EditText(requireContext()).apply {
-            hint = "手机号"
-            setText(currentPhone)
-            inputType = android.text.InputType.TYPE_CLASS_PHONE
-            setSingleLine()
-        }
-        val container = android.widget.LinearLayout(requireContext()).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            val pad = (16 * resources.displayMetrics.density).toInt()
-            setPadding(pad, pad, pad, pad)
-            addView(nameEdit)
-            addView(phoneEdit)
-        }
-
-        AlertDialog.Builder(requireContext())
-            .setTitle("修改个人信息")
-            .setView(container)
-            .setPositiveButton("保存") { _, _ ->
-                val newName = nameEdit.text.toString().trim()
-                val newPhone = phoneEdit.text.toString().trim()
-                if (newName.isNotEmpty()) {
-                    prefs.edit()
-                        .putString("user_name", newName)
-                        .putString("user_phone", newPhone)
-                        .apply()
-                    binding.tvUserName.text = newName
-                    binding.tvUserPhone.text = newPhone
-                    Toast.makeText(requireContext(), "信息已更新", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("取消", null)
-            .show()
     }
 
     // ==================== 跌倒守护区域 ====================
@@ -268,7 +126,10 @@ class HomeFragment : Fragment() {
     // ==================== 家属绑定码区域 ====================
 
     private fun setupBindCodeSection() {
-        if (!CloudBaseClient.isRegistered(requireContext())) return
+        if (!CloudBaseClient.isRegistered(requireContext())) {
+            binding.cardBind.visibility = View.GONE
+            return
+        }
 
         binding.cardBind.visibility = View.VISIBLE
 
@@ -327,9 +188,6 @@ class HomeFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         // 每次回来刷新状态
-        if (CloudBaseClient.isRegistered(requireContext())) {
-            showRegisteredState()
-        }
         updateGuardianStatus()
         // 检查无障碍服务是否被系统杀掉（HyperOS等ROM常见问题）
         checkAccessibilityStatus()

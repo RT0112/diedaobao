@@ -187,8 +187,7 @@ object RemoteAssistManager {
             isPolling = false
         }
 
-        // 连接 WebSocket
-        WSClient.connect(context)
+        // WebSocket 已在 FallDetectionApp.onCreate() 中连接，这里不再重复调用
         startWSEventListener(context)
 
         // WS 已连接：不需要 HTTP 轮询请求，只需健康检查

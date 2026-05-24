@@ -4,5 +4,5 @@
     <item android:id="@+id/nav_test1" android:title="测试1" android:icon="@android:drawable/ic_menu_view" />
     <item android:id="@+id/nav_history" android:title="记录" android:icon="@android:drawable/ic_menu_recent_history" />
     <item android:id="@+id/nav_contacts" android:title="联系人" android:icon="@android:drawable/ic_menu_myplaces" />
-    <item android:id="@+id/nav_settings" android:title="设置" android:icon="@android:drawable/ic_menu_preferences" />
+    <item android:id="@+id/nav_profile" android:title="我的" android:icon="@android:drawable/ic_menu_myplaces" />
 </menu>

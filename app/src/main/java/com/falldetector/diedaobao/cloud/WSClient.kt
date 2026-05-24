@@ -276,7 +276,7 @@ object WSClient {
             put("data", JSONObject().apply {
                 put("latitude", latitude)
                 put("longitude", longitude)
-                put("accuracy", accuracy)
+                put("accuracy", accuracy.toDouble())  // Fix: Float -> Double
                 put("timestamp", System.currentTimeMillis())
             })
         }

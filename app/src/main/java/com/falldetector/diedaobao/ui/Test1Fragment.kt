@@ -4,11 +4,13 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.core.app.ActivityCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.falldetector.diedaobao.R
@@ -64,12 +66,35 @@ class Test1Fragment : Fragment() {
 
     private fun setupButtons() {
         binding.btnSimulateFall.setOnClickListener {
+            // vFix: 获取当前实际位置传给 ConfirmActivity
+            // 否则模拟跌倒的位置可能是 (0,0) 或过时的 getLastKnownLocation
+            var lat = 0.0
+            var lng = 0.0
+            try {
+                val ctx = requireContext()
+                if (ActivityCompat.checkSelfPermission(ctx, android.Manifest.permission.ACCESS_FINE_LOCATION)
+                    == PackageManager.PERMISSION_GRANTED
+                ) {
+                    val lm = ctx.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+                    val loc = lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)
+                        ?: lm.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
+                    loc?.let {
+                        lat = it.latitude
+                        lng = it.longitude
+                    }
+                }
+            } catch (e: Exception) {
+                // 忽略，位置为0也没关系（至少不会静默用旧数据）
+            }
+
             val intent = Intent(requireContext(), ConfirmActivity::class.java).apply {
                 putExtra("peak_acc", 2.8f)
                 putExtra("posture_angle", 80f)
                 putExtra("confidence", 0.85f)
                 putExtra("detection_method", "test_simulate")
                 putExtra("ml_probability", 0.85f)
+                putExtra("latitude", lat)
+                putExtra("longitude", lng)
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_CLEAR_TOP or
                         Intent.FLAG_ACTIVITY_SINGLE_TOP

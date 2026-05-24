@@ -28,7 +28,13 @@ data class FallDetectionResult(
     // v0.29.6: 新增详细信息（供微信通知）
     val physScore: Float = 0f,
     val impactG: Float = 0f,
-    val fallHeight: Float = 0f
+    val fallHeight: Float = 0f,
+    // v0.47: 完整检测数据（供子女端反馈）
+    val ffTimeMs: Long = 0L,
+    val weightedScore: Float = 0f,
+    val decisionPath: String = "",
+    val sensorDataJson: String = "[]",
+    val feedRate: Float = 0f
 )
 
 /** v0.29: 500ms窗口帧数据 */
@@ -445,9 +451,12 @@ class FallDetector(private val context: Context? = null) {
         val step6V = peakVelocity >= cfg.velocityMin
         val step6Imp = peakValue >= DetectionConfig.IMPACT_MIN_HARDCODED
 
-        val isFall = isMlHigh || (isMlLow && fallScore >= cfg.weightedScoreThresh) || physicsOverride
+        // 2026-05-22：全局3.0g硬编码门槛（路径1/2也必须过此门槛）
+        val belowMinImpact = peakValue < DetectionConfig.IMPACT_MIN_HARDCODED
+        val isFall = (isMlHigh || (isMlLow && fallScore >= cfg.weightedScoreThresh) || physicsOverride) && !belowMinImpact
 
         val reason = when {
+            belowMinImpact -> "冲击力${String.format("%.1f", peakValue)}g<${DetectionConfig.IMPACT_MIN_HARDCODED}g"
             isMlHigh -> "路径1:ML高阈值"
             physicsOverride -> "路径3:物理覆盖"
             isMlLow && fallScore >= cfg.weightedScoreThresh -> "路径2:加权评分=${String.format("%.2f", fallScore)}"
@@ -519,7 +528,13 @@ class FallDetector(private val context: Context? = null) {
             // v0.29.6: 新增详细信息
             physScore = physScore,
             impactG = peakValue,
-            fallHeight = peakVelocity.let { v -> v * v / (2f * 9.81f) }  // h = v²/2g
+            fallHeight = peakVelocity.let { v -> v * v / (2f * 9.81f) },  // h = v²/2g
+            // v0.47: 完整检测数据
+            ffTimeMs = ffTime,
+            weightedScore = fallScore,
+            decisionPath = decisionPath,
+            sensorDataJson = getSensorSnapshotJson(),
+            feedRate = calculateFeedRate()
         )
         
         // v0.30.9: 跌倒触发时保存事件到Room数据库（供反馈系统使用）
@@ -851,6 +866,12 @@ class FallDetector(private val context: Context? = null) {
         }
         sb.append("]")
         return sb.toString()
+    }
+
+    /** 计算实际feed帧率（供上报） */
+    private fun calculateFeedRate(): Float {
+        val elapsed = (System.currentTimeMillis() - firstFeedTime) / 1000f
+        return if (elapsed > 1f) feedCount / elapsed else 50f
     }
     
     /** 保存跌倒事件到Room数据库 */
