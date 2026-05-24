@@ -11,7 +11,10 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import okio.ByteString
 import org.json.JSONObject
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.concurrent.TimeUnit
 import com.falldetector.diedaobao.util.AppLogger
 
@@ -329,7 +332,7 @@ object WSClient {
     }
     
     /**
-     * 发送屏幕帧（老人端→子女端）
+     * 发送屏幕帧（老人端→子女端）- JSON方式（旧）
      */
     fun pushAssistFrame(to: String, frameData: String, width: Int, height: Int, frameNum: Int) {
         val json = JSONObject().apply {
@@ -343,6 +346,32 @@ object WSClient {
             })
         }
         safeSend(json)
+    }
+
+    /**
+     * 发送屏幕帧（老人端→子女端）- 二进制直传（无Base64膨胀）
+     * 协议: 4字节大端 headerLen + JSON header + JPEG body
+     * 服务端直接从二进制中提取 header.to 转发给 Guardian
+     */
+    fun pushAssistFrameBinary(to: String, jpegBytes: ByteArray, width: Int, height: Int, frameNum: Int) {
+        if (!isConnected || webSocket == null) return
+        try {
+            val header = JSONObject().apply {
+                put("to", to)
+                put("w", width)
+                put("h", height)
+                put("fn", frameNum)
+            }
+            val headerBytes = header.toString().toByteArray(Charsets.UTF_8)
+            val buf = ByteBuffer.allocate(4 + headerBytes.size + jpegBytes.size)
+            buf.order(ByteOrder.BIG_ENDIAN)
+            buf.putInt(headerBytes.size)
+            buf.put(headerBytes)
+            buf.put(jpegBytes)
+            webSocket?.send(ByteString.of(*buf.array()))
+        } catch (e: Exception) {
+            Log.e(TAG, "二进制帧发送失败: ${e.message}")
+        }
     }
     
     /**

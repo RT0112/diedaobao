@@ -421,7 +421,7 @@ class ScreenCaptureService : Service() {
                         updateNotification("已截图${frameCount}帧")
                     }
 
-                    uploadFrameAsync(b64, frameCount, targetW, targetH)
+                    uploadFrameAsync(jpegBytes, frameCount, targetW, targetH)
                 } catch (e: Exception) {
                     AppLogger.e(TAG, "截图处理异常: ${e.message}")
                 }
@@ -524,7 +524,7 @@ class ScreenCaptureService : Service() {
                     updateNotification(msg)
                 }
                 
-                uploadFrameAsync(b64, frameCount, targetW, targetH)
+                uploadFrameAsync(jpegBytes, frameCount, targetW, targetH)
                 lastUploadTime = now
                 frameCount++
 
@@ -607,13 +607,13 @@ class ScreenCaptureService : Service() {
     /**
      * 异步上传帧（使用单线程线程池，避免每帧创建 HandlerThread 导致线程泄漏）
      */
-    private fun uploadFrameAsync(b64: String, frameNum: Int, w: Int, h: Int) {
+    private fun uploadFrameAsync(jpegBytes: ByteArray, frameNum: Int, w: Int, h: Int) {
         val wsOk = com.falldetector.diedaobao.cloud.WSClient.isWSConnected()
         Log.i(TAG, "uploadFrameAsync[#$frameNum]: start, wsConnected=$wsOk, guardianId=$guardianId")
         // WS 优先发送帧（低延迟、无HTTP开销）
         if (wsOk) {
             val gid = guardianId ?: elderId ?: ""
-            com.falldetector.diedaobao.cloud.WSClient.pushAssistFrame(gid, b64, w, h, frameNum)
+            com.falldetector.diedaobao.cloud.WSClient.pushAssistFrameBinary(gid, jpegBytes, w, h, frameNum)
             uploadFailCount = 0
             if (frameNum < 5) {
                 Log.i(TAG, "✅ 帧${frameNum}WS发送成功")
@@ -622,6 +622,7 @@ class ScreenCaptureService : Service() {
         }
         
         // HTTP 降级
+        val b64 = android.util.Base64.encodeToString(jpegBytes, android.util.Base64.NO_WRAP)
         uploadExecutor.execute {
             try {
                 val url = URL(SIGNAL_URL)
