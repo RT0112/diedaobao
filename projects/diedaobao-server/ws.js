@@ -34,7 +34,11 @@ function initWS(server, jwtSecret) {
 
     ws.on('pong', () => { ws.isAlive = true })
 
-    ws.on('message', (raw) => {
+    ws.on('message', (raw, isBinary) => {
+      // 二进制帧转发（assist_frame 直传，跳过JSON编解码）
+      if (isBinary) {
+        return handleBinaryMessage(ws, raw)
+      }
       let msg
       try {
         msg = JSON.parse(raw)
@@ -71,7 +75,42 @@ function initWS(server, jwtSecret) {
 
   wss.on('close', () => clearInterval(heartbeat))
 
-  console.log('[WS] WebSocket 服务器已启动，路径: /ws')
+  console.log('[WS] WebSocket 服务器已启动（含二进制帧转发），路径: /ws')
+}
+
+/**
+ * 处理二进制消息 — 远程协助帧直传
+ * 协议: 4字节大端 headerLen + JSON header + JPEG body
+ * header: { to: "guardianId", w: 360, h: 640, fn: 5 }
+ */
+function handleBinaryMessage(ws, raw) {
+  try {
+    if (raw.length < 4) return
+    const headerLen = raw.readUInt32BE(0)
+    if (raw.length < 4 + headerLen) return
+    const headerJson = raw.subarray(4, 4 + headerLen).toString('utf8')
+    const header = JSON.parse(headerJson)
+    const jpegData = raw.subarray(4 + headerLen)
+    const { to, w, h, fn } = header
+    if (!to || jpegData.length === 0) return
+
+    // 二进制直传给子女端 Guardian
+    const guardWs = clients.get(to)
+    if (!guardWs || guardWs.readyState !== 1) {
+      // 降级：存储帧到DB供HTTP轮询
+      try {
+        const db = getDb()
+        const frameId = `frame_${ws.userId}_${fn}`
+        const b64 = jpegData.toString('base64')
+        db.prepare('INSERT OR REPLACE INTO screen_frames (id, elderId, frameNum, width, height, data, uploadedAt) VALUES (?,?,?,?,?,?,?)')
+          .run(frameId, ws.userId, fn, w, h, b64, Date.now())
+      } catch (e) { /* ignore */ }
+      return
+    }
+    guardWs.send(raw)
+  } catch (e) {
+    console.error('[WS] 二进制帧处理失败:', e.message)
+  }
 }
 
 /**
