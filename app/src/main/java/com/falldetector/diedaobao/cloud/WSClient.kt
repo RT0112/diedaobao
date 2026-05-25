@@ -35,20 +35,24 @@ object WSClient {
     // WS_URL已迁移到ServerConfig
     private val WS_URL = ServerConfig.WS_URL
     
-    // 重连配置
-    private const val RECONNECT_DELAY_MS = 3000L
-    private const val MAX_RECONNECT_ATTEMPTS = 5
+    // 重连配置：指数退避 + 无限重连
+    private const val INITIAL_RECONNECT_DELAY_MS = 3000L
+    private const val MAX_RECONNECT_DELAY_MS = 60000L   // 最长等60秒
     private const val HEARTBEAT_INTERVAL_MS = 25000L
+    private const val WATCHDOG_INTERVAL_MS = 120000L    // 2分钟看门狗检查
     
-    private var webSocket: WebSocket? = null
-    private var isConnected = false
+    @Volatile private var webSocket: WebSocket? = null
+    @Volatile private var isConnected = false
     private var reconnectAttempts = 0
     private var heartbeatJob: Job? = null
     private var reconnectJob: Job? = null
+    private var watchdogJob: Job? = null
+    private var appContext: Context? = null  // 保存context供看门狗重连
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     
     // 事件流：供 UI/Service 订阅
-    private val _events = MutableSharedFlow<WSEvent>(replay = 1, extraBufferCapacity = 20)
+    // replay=0 防止旧事件重放（和子女端保持一致）
+    private val _events = MutableSharedFlow<WSEvent>(replay = 0, extraBufferCapacity = 20)
     val events: SharedFlow<WSEvent> = _events
     
     private var userId: String? = null
@@ -63,12 +67,17 @@ object WSClient {
         val prefs = context.getSharedPreferences("cloudbase", Context.MODE_PRIVATE)
         userId = prefs.getString("user_id", null) ?: return
         
+        // 保存context供看门狗重连
+        appContext = context.applicationContext
+        
         if (isConnected && webSocket != null) {
             Log.i(TAG, "WebSocket 已连接，跳过")
+            startWatchdog(context)
             return
         }
         
         Log.i(TAG, "连接 WebSocket: $WS_URL")
+        startWatchdog(context)
         
         val client = OkHttpClient.Builder()
             .pingInterval(HEARTBEAT_INTERVAL_MS, TimeUnit.MILLISECONDS)
@@ -101,7 +110,10 @@ object WSClient {
             
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 Log.w(TAG, "WebSocket 关闭: $code $reason")
-                isConnected = false
+                if (this@WSClient.webSocket === webSocket) {
+                    isConnected = false
+                    this@WSClient.webSocket = null
+                }
                 webSocket.close(1000, null)
             }
             
@@ -126,6 +138,7 @@ object WSClient {
     fun disconnect() {
         reconnectJob?.cancel()
         heartbeatJob?.cancel()
+        watchdogJob?.cancel()
         webSocket?.close(1000, "User disconnected")
         webSocket = null
         isConnected = false
@@ -388,18 +401,43 @@ object WSClient {
     
     // ========== 重连机制 ==========
     
+    /**
+     * 指数退避重连：3s → 6s → 12s → 24s → 48s → 60s(封顶) → 60s → ...
+     * 永不放弃，确保WS断线后最终能恢复
+     */
     private fun scheduleReconnect(context: Context) {
-        if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-            Log.w(TAG, "达到最大重连次数($MAX_RECONNECT_ATTEMPTS)，停止重连，切换HTTP降级")
-            return
-        }
-        
         reconnectJob?.cancel()
+        reconnectAttempts++
+        
+        // 指数退避计算延迟
+        val delay = minOf(
+            INITIAL_RECONNECT_DELAY_MS * (1L shl minOf(reconnectAttempts - 1, 4)),  // 3,6,12,24,48
+            MAX_RECONNECT_DELAY_MS  // 封顶60s
+        )
+        
+        Log.i(TAG, "尝试重连 WebSocket (第${reconnectAttempts}次, ${delay/1000}s后)")
+        
         reconnectJob = scope.launch {
-            delay(RECONNECT_DELAY_MS)
-            reconnectAttempts++
-            Log.i(TAG, "尝试重连 WebSocket ($reconnectAttempts/$MAX_RECONNECT_ATTEMPTS)")
+            delay(delay)
             connect(context)
+        }
+    }
+    
+    /**
+     * 看门狗：定期检查WS连接状态，断线则触发重连
+     * 解决长时间运行后WS断线不重连的问题
+     */
+    private fun startWatchdog(context: Context) {
+        watchdogJob?.cancel()
+        watchdogJob = scope.launch {
+            while (true) {
+                delay(WATCHDOG_INTERVAL_MS)
+                if (!isConnected) {
+                    Log.w(TAG, "🔄 看门狗: WS断线，触发重连")
+                    reconnectAttempts = 0  // 重置计数，用短间隔重新开始
+                    connect(context)
+                }
+            }
         }
     }
     

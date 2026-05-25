@@ -12,15 +12,25 @@ android {
         applicationId = "com.falldetector.diedaobao"
         minSdk = 26
         targetSdk = 34
-        versionCode = 149
-        versionName = "0.45.7"
+        versionCode = 150
+        versionName = "0.45.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file("diedaobao-release-key.jks")
+            storePassword = "diedaobao123"
+            keyAlias = "diedaobao"
+            keyPassword = "diedaobao123"
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
