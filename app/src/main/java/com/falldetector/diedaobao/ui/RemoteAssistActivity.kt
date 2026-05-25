@@ -440,6 +440,7 @@ class RemoteAssistActivity : AppCompatActivity() {
             val result = RemoteAssistManager.respondToRequest(this@RemoteAssistActivity, true)
             runOnUiThread {
                 if (result.success) {
+                    Log.i(TAG, "respondToRequest 返回: guardianId=${result.guardianId}, sessionId=${result.sessionId}")
                     guardianId = result.guardianId
                     startPermissionFlow()
                 } else {
