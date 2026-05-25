@@ -15,6 +15,7 @@ import com.falldetector.diedaobao.cloud.CloudBaseClient
 import com.falldetector.diedaobao.databinding.ActivityLoginBinding
 import com.falldetector.diedaobao.util.AppLogger
 import kotlinx.coroutines.launch
+import com.falldetector.diedaobao.cloud.WSClient
 
 class LoginActivity : AppCompatActivity() {
 
@@ -158,6 +159,8 @@ class LoginActivity : AppCompatActivity() {
 
             result.onSuccess {
                 showSuccess("🎉 登录成功，欢迎回来！")
+                // 连接WS（确保收到跌倒推送、位置请求、协助请求）
+                try { WSClient.connect(this@LoginActivity) } catch (_: Exception) {}
                 // 延迟跳转，让用户看到成功提示
                 Handler(Looper.getMainLooper()).postDelayed({
                     goToMain()
@@ -248,6 +251,8 @@ class LoginActivity : AppCompatActivity() {
 
             result.onSuccess {
                 showSuccess("🎉 注册成功！正在进入...")
+                // 连接WS（确保收到跌倒推送、位置请求、协助请求）
+                try { WSClient.connect(this@LoginActivity) } catch (_: Exception) {}
                 // 延迟跳转，让用户看到成功提示
                 Handler(Looper.getMainLooper()).postDelayed({
                     goToMain()

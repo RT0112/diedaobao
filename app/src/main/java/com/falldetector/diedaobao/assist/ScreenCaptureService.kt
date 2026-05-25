@@ -16,6 +16,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
@@ -69,9 +70,9 @@ class ScreenCaptureService : Service() {
             private set
         private val SIGNAL_URL = "$BASE_URL/remote-assist"
 
-        // v26: 帧率提升至3fps，改善子女端延迟体验
-        private const val TARGET_FPS = 3  // 3fps，平衡流畅度和网络压力
-        private const val FRAME_INTERVAL_MS = (1000L / TARGET_FPS) // 333ms
+        // v30: 延迟优先 — 360p WebP 60% + 15fps
+        private const val TARGET_FPS = 15  // 15fps，帧间隔67ms
+        private const val FRAME_INTERVAL_MS = (1000L / TARGET_FPS) // 67ms
 
         // 最大上传延迟（超过就丢帧）
         private const val MAX_UPLOAD_TIME_MS = 2000L
@@ -123,13 +124,16 @@ class ScreenCaptureService : Service() {
     }
 
     // JPEG 压缩配置（复用避免每次分配）
-    private val jpegBos = ByteArrayOutputStream(256 * 1024) // 256KB buffer
+    private val jpegBos = ByteArrayOutputStream(512 * 1024) // 512KB buffer (v30: 560p JPEG 50%)
     private val yuvToRgb = YuvImageToRgb()
 
     // 上传线程池（替代每帧创建 HandlerThread，避免线程泄漏）
     private val uploadExecutor = Executors.newSingleThreadExecutor { r ->
         Thread(r, "FrameUpload").apply { isDaemon = true }
     }
+
+    // v31: PARTIAL_WAKE_LOCK 防止 CPU 在帧间隔期间进入深度睡眠
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -139,7 +143,9 @@ class ScreenCaptureService : Service() {
         // Android Q+ (API 29+): MediaProjection 要求 Service 必须是前台服务
         // startForeground() 必须在 onCreate 后 5 秒内调用（Android 14+）
         startForeground(NOTIFICATION_ID, buildNotification("等待连接..."))
-        Log.i(TAG, "ScreenCaptureService created (v4 foreground)")
+        // v31: 获取 PARTIAL_WAKE_LOCK，防止帧间隔期间CPU休眠
+        acquireWakeLock()
+        Log.i(TAG, "ScreenCaptureService created (v31 wakeLock)")
     }
 
     // Binder for Activity binding
@@ -203,6 +209,7 @@ class ScreenCaptureService : Service() {
         Log.i(TAG, "onDestroy: frames=$frameCount, uploadFails=$uploadFailCount, screencap=$isScreencapMode")
         isDisposed.set(true)
         isRunning = false
+        releaseWakeLock()
         stopScreencapMode()
         stopCapture()
         uploadExecutor.shutdownNow()
@@ -212,6 +219,34 @@ class ScreenCaptureService : Service() {
         nm.cancel(NOTIFICATION_ID)
         instance = null
         super.onDestroy()
+    }
+
+    // v31: PARTIAL_WAKE_LOCK 防止 CPU 深度休眠导致帧延迟/掉帧
+    private fun acquireWakeLock() {
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "FallDetector:ScreenCaptureWakeLock"
+            ).apply {
+                acquire(30 * 60 * 1000L) // 最多30分钟，防止泄漏
+            }
+            Log.i(TAG, "PARTIAL_WAKE_LOCK acquired")
+        } catch (e: Exception) {
+            AppLogger.w(TAG, "获取WAKE_LOCK失败: ${e.message}")
+        }
+    }
+
+    private fun releaseWakeLock() {
+        try {
+            wakeLock?.let {
+                if (it.isHeld) it.release()
+            }
+            wakeLock = null
+            Log.i(TAG, "PARTIAL_WAKE_LOCK released")
+        } catch (e: Exception) {
+            AppLogger.w(TAG, "释放WAKE_LOCK失败: ${e.message}")
+        }
     }
 
     // ==================== 帧采集（ImageReader）====================
@@ -394,8 +429,8 @@ class ScreenCaptureService : Service() {
                 }
 
                 try {
-                    // 缩放至 360p（平衡画质与传输量）
-                    val targetW = 360
+                    // v30: JPEG 50% 硬件加速（比 WebP 快 3-5x），保持 560p 画质
+                    val targetW = 560
                     val targetH = maxOf(1, (bitmap.height * targetW.toFloat() / bitmap.width).toInt())
                     streamWidth = targetW
                     streamHeight = targetH
@@ -403,7 +438,7 @@ class ScreenCaptureService : Service() {
                     bitmap.recycle()
 
                     jpegBos.reset()
-                    scaled.compress(Bitmap.CompressFormat.JPEG, 25, jpegBos)
+                    scaled.compress(Bitmap.CompressFormat.JPEG, 50, jpegBos)
                     scaled.recycle()
 
                     val jpegBytes = jpegBos.toByteArray()
@@ -485,17 +520,17 @@ class ScreenCaptureService : Service() {
             val bitmap = imageToBitmap(image, planes)
 
             if (bitmap != null) {
-                // 缩放至 360p（平衡画质与传输量）
-                val targetW = 360
+                // v30: JPEG 50% 硬件加速（比 WebP 快 3-5x），保持 560p 画质
+                val targetW = 560
                 val targetH = maxOf(1, (bitmap.height * targetW.toFloat() / bitmap.width).toInt())
                 streamWidth = targetW
                 streamHeight = targetH
                 val scaled = Bitmap.createScaledBitmap(bitmap, targetW, targetH, true)
                 bitmap.recycle()
 
-                // JPEG 压缩并上传（25% 质量，平衡画质与传输）
+                // JPEG 硬件加速编码（Android GPU 加速），比 WebP 快 3-5 倍
                 jpegBos.reset()
-                val compressed = scaled.compress(Bitmap.CompressFormat.JPEG, 25, jpegBos)
+                val compressed = scaled.compress(Bitmap.CompressFormat.JPEG, 50, jpegBos)
                 scaled.recycle()
                 if (!compressed) {
                     AppLogger.e(TAG, "❌ JPEG压缩失败!")
@@ -508,13 +543,13 @@ class ScreenCaptureService : Service() {
                 if (jpegBytes.isEmpty()) {
                     AppLogger.e(TAG, "❌ JPEG数据为空!")
                     updateNotification("❌ JPEG数据为空")
-                    bitmap.recycle()
+                    // v31: bitmap已在上面recycle，不再重复回收
                     image.close()
                     return
                 }
 
                 val b64 = android.util.Base64.encodeToString(jpegBytes, android.util.Base64.NO_WRAP)
-                bitmap.recycle()
+                // v31: bitmap已在上面recycle（第529行），不重复回收
 
                 // 前5帧详细日志+通知
                 if (frameCount < 5) {
@@ -608,20 +643,18 @@ class ScreenCaptureService : Service() {
      * 异步上传帧（使用单线程线程池，避免每帧创建 HandlerThread 导致线程泄漏）
      */
     private fun uploadFrameAsync(jpegBytes: ByteArray, frameNum: Int, w: Int, h: Int) {
-        val wsOk = com.falldetector.diedaobao.cloud.WSClient.isWSConnected()
-        Log.i(TAG, "uploadFrameAsync[#$frameNum]: start, wsConnected=$wsOk, guardianId=$guardianId")
         // WS 优先发送帧（低延迟、无HTTP开销）
-        if (wsOk) {
-            val gid = guardianId ?: elderId ?: ""
-            com.falldetector.diedaobao.cloud.WSClient.pushAssistFrameBinary(gid, jpegBytes, w, h, frameNum)
+        val gid = guardianId ?: elderId ?: ""
+        val sent = com.falldetector.diedaobao.cloud.WSClient.pushAssistFrameBinary(gid, jpegBytes, w, h, frameNum)
+        if (sent) {
             uploadFailCount = 0
             if (frameNum < 5) {
                 Log.i(TAG, "✅ 帧${frameNum}WS发送成功")
             }
             return
         }
-        
-        // HTTP 降级
+
+        // WS 失败，HTTP 降级
         val b64 = android.util.Base64.encodeToString(jpegBytes, android.util.Base64.NO_WRAP)
         uploadExecutor.execute {
             try {

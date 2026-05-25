@@ -40,106 +40,107 @@ object WSClient {
     private const val MAX_RECONNECT_ATTEMPTS = 5
     private const val HEARTBEAT_INTERVAL_MS = 25000L
     
-    private var webSocket: WebSocket? = null
+    @Volatile private var webSocket: WebSocket? = null
     @Volatile private var isConnected = false
     private var reconnectAttempts = 0
     private var heartbeatJob: Job? = null
     private var reconnectJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val isConnecting = java.util.concurrent.atomic.AtomicBoolean(false)
-    
+    private val connectingLock = Any()
+
     // 事件流：供 UI/Service 订阅
     private val _events = MutableSharedFlow<WSEvent>(replay = 1, extraBufferCapacity = 20)
     val events: SharedFlow<WSEvent> = _events
-    
+
     private var userId: String? = null
     private var role: String = "elder"
-    
+
     // ========== 连接管理 ==========
-    
+
     /**
      * 连接 WebSocket（需要先 init 获取 userId）
      */
     fun connect(context: Context) {
-        if (!isConnecting.compareAndSet(false, true)) {
-            Log.w(TAG, "connect() 正在执行中，跳过重复调用")
-            return
-        }
-
-        try {
+        synchronized(connectingLock) {
             val prefs = context.getSharedPreferences("cloudbase", Context.MODE_PRIVATE)
             userId = prefs.getString("user_id", null) ?: return
 
-            // 关闭旧连接（先关后建）
-            webSocket?.let { old ->
-                webSocket = null
-                isConnected = false
-                try { old.close(1000, "Reconnecting") } catch (_: Exception) {}
+            if (isConnected && webSocket != null) {
+                Log.i(TAG, "WebSocket 已连接，跳过")
+                return
             }
+
+            // 关闭旧连接（如果存在），先清引用避免 onClosed 重连
+            val oldWs = webSocket
+            webSocket = null
+            isConnected = false
             reconnectAttempts = 0
+            oldWs?.close(1000, "Reconnecting")
 
             Log.i(TAG, "连接 WebSocket: $WS_URL")
+        }
 
-            val client = OkHttpClient.Builder()
-                .pingInterval(HEARTBEAT_INTERVAL_MS, TimeUnit.MILLISECONDS)
-                .build()
+        val client = OkHttpClient.Builder()
+            .pingInterval(HEARTBEAT_INTERVAL_MS, TimeUnit.MILLISECONDS)
+            .build()
 
-            val request = Request.Builder()
-                .url(WS_URL)
-                .build()
+        val request = Request.Builder()
+            .url(WS_URL)
+            .build()
 
-            webSocket = client.newWebSocket(request, object : WebSocketListener() {
-                override fun onOpen(ws: WebSocket, response: Response) {
-                    Log.i(TAG, "WebSocket 已连接")
-                    this@WSClient.webSocket = ws
-                    isConnected = true
-                    reconnectAttempts = 0
+        val newWs = client.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(ws: WebSocket, response: Response) {
+                Log.i(TAG, "WebSocket 已连接")
+                webSocket = ws
+                isConnected = true
+                reconnectAttempts = 0
 
-                    // 认证
-                    val auth = JSONObject().apply {
-                        put("type", "auth")
-                        put("data", JSONObject().apply {
-                            put("userId", userId)
-                            put("role", "elder")
-                        })
-                    }
-                    ws.send(auth.toString())
+                // 认证
+                val auth = JSONObject().apply {
+                    put("type", "auth")
+                    put("data", JSONObject().apply {
+                        put("userId", userId)
+                        put("role", "elder")
+                    })
                 }
+                ws.send(auth.toString())
+            }
 
-                override fun onMessage(ws: WebSocket, text: String) {
-                    handleMessage(text)
-                }
+            override fun onMessage(ws: WebSocket, text: String) {
+                handleMessage(text)
+            }
 
-                override fun onClosing(ws: WebSocket, code: Int, reason: String) {
-                    Log.w(TAG, "WebSocket 关闭: $code $reason")
-                    if (this@WSClient.webSocket === ws) {
-                        isConnected = false
-                        this@WSClient.webSocket = null
-                    }
-                    ws.close(1000, null)
+            override fun onClosing(ws: WebSocket, code: Int, reason: String) {
+                Log.w(TAG, "WebSocket 关闭: $code $reason")
+                if (webSocket === ws) {
+                    isConnected = false
+                    webSocket = null
                 }
+                ws.close(1000, null)
+            }
 
-                override fun onClosed(ws: WebSocket, code: Int, reason: String) {
-                    Log.w(TAG, "WebSocket 已关闭: $code $reason")
-                    if (this@WSClient.webSocket === ws) {
-                        isConnected = false
-                        this@WSClient.webSocket = null
-                    }
-                    scheduleReconnect(context)
+            override fun onClosed(ws: WebSocket, code: Int, reason: String) {
+                Log.w(TAG, "WebSocket 已关闭: $code $reason")
+                if (webSocket === ws) {
+                    isConnected = false
+                    webSocket = null
                 }
+                scheduleReconnect(context)
+            }
 
-                override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
-                    Log.e(TAG, "WebSocket 失败: ${t.message}")
-                    if (this@WSClient.webSocket === ws) {
-                        isConnected = false
-                        this@WSClient.webSocket = null
-                    }
-                    ws.cancel()
-                    scheduleReconnect(context)
+            override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+                Log.e(TAG, "WebSocket 失败: ${t.message}")
+                if (webSocket === ws) {
+                    isConnected = false
+                    webSocket = null
                 }
-            })
-        } finally {
-            isConnecting.set(false)
+                ws.cancel()
+                scheduleReconnect(context)
+            }
+        })
+        // 创建成功后赋值（如果没被其他线程抢占）
+        if (webSocket == null) {
+            webSocket = newWs
         }
     }
     
@@ -375,9 +376,11 @@ object WSClient {
      * 协议: 4字节大端 headerLen + JSON header + JPEG body
      * 服务端直接从二进制中提取 header.to 转发给 Guardian
      */
-    fun pushAssistFrameBinary(to: String, jpegBytes: ByteArray, width: Int, height: Int, frameNum: Int) {
-        if (!isConnected || webSocket == null) return
-        try {
+    /** @return true if sent successfully via WS, false if should fall back to HTTP */
+    fun pushAssistFrameBinary(to: String, jpegBytes: ByteArray, width: Int, height: Int, frameNum: Int): Boolean {
+        val ws = webSocket  // local snapshot for thread safety
+        if (!isConnected || ws == null) return false
+        return try {
             val header = JSONObject().apply {
                 put("to", to)
                 put("w", width)
@@ -389,9 +392,11 @@ object WSClient {
             buf.writeInt(headerBytes.size)
             buf.write(headerBytes)
             buf.write(jpegBytes)
-            webSocket?.send(buf.readByteString())
+            ws.send(buf.readByteString())
+            true
         } catch (e: Exception) {
             Log.e(TAG, "二进制帧发送失败: ${e.message}")
+            false
         }
     }
     

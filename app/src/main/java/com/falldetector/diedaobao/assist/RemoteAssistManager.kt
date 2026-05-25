@@ -40,6 +40,10 @@ object RemoteAssistManager {
     // 请求去重：防止同一个请求被 HomeFragment + FallDetectionService 同时触发导致双弹窗
     private var lastNotifiedRequestId: String = ""
 
+    // v30: 信号去重 — 防止 WS+HTTP双通道分号导致手势执行两次
+    private val lastDispatchedSignalKey = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private const val SIGNAL_DEDUP_MS = 500L  // 500ms 内相同信号视为重复
+
     /**
      * 注册协助请求监听器（可注册多个，不会被覆盖）
      */
@@ -304,9 +308,13 @@ object RemoteAssistManager {
 
     /**
      * 开始信号轮询（协助会话 active 后调用）
-     * 
+     *
      * 从云端拉取子女端发送的触控信号，分发给 RemoteAssistService 执行。
      * 信号类型：touch (click/swipe/longclick) 和 end_session
+     *
+     * v30: WS已连接时跳过HTTP信号轮询，避免双通道分发导致手势执行两次（auto-scroll根因）
+     * v31: 回退到 v30 稳定版，WS在线时 delay 500ms 继续轮询（兜底），
+     *       仅通过 dispatchSignal 内的 ConcurrentHashMap 去重来防双通道
      */
     fun startSignalPolling(context: Context) {
         if (isSignalPolling) return
@@ -318,6 +326,11 @@ object RemoteAssistManager {
         signalPollJob = scope.launch {
             while (isActive && isSignalPolling) {
                 try {
+                    // v30: WS已连接时跳过HTTP信号轮询，避免双通道分发导致手势执行两次（auto-scroll根因）
+                    if (WSClient.isWSConnected()) {
+                        delay(SIGNAL_POLL_INTERVAL_MS * 2) // 降低频率，仅做兜底
+                        continue
+                    }
                     val signals = pollForSignals(context)
                     for (sig in signals) {
                         dispatchSignal(sig)
@@ -521,6 +534,20 @@ object RemoteAssistManager {
      * 分发信号到 RemoteAssistService 执行
      */
     private fun dispatchSignal(signal: TouchSignal) {
+        // v30: 信号去重 — 相同from+touchAction+坐标在500ms内只执行一次（防止WS+HTTP双通道）
+        val sigKey = when {
+            signal.touchAction == "swipe" -> "${signal.from}_swipe_${signal.x1}_${signal.y1}_${signal.x2}_${signal.y2}"
+            signal.touchAction == "click" -> "${signal.from}_click_${signal.x}_${signal.y}"
+            signal.type == "key" -> "${signal.from}_key_${signal.keyCode}"
+            else -> return
+        }
+        val lastTime = lastDispatchedSignalKey[sigKey]
+        val now = System.currentTimeMillis()
+        if (lastTime != null && now - lastTime < SIGNAL_DEDUP_MS) {
+            return  // 500ms内重复，丢弃
+        }
+        lastDispatchedSignalKey[sigKey] = now
+
         val service = RemoteAssistService.instance
         if (service == null) {
             AppLogger.w(TAG, "信号到达但 AccessibilityService 未连接，丢弃: ${signal.type}")

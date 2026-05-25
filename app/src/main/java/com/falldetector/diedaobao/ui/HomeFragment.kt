@@ -252,50 +252,9 @@ class HomeFragment : Fragment() {
     }
 
     private fun handleAssistRequest(request: RemoteAssistManager.AssistRequest) {
-        AppLogger.i("HomeFragment", "收到协助请求 from=${request.fromName}")
-
-        // v19.7: HomeFragment 只发通知，不 startActivity
-        // FallDetectionService 已经会 startActivity + 发通知
-        // 双方都 startActivity 会导致 RemoteAssistActivity 被触发两次 → 两个授权弹窗
-        // HomeFragment 只补发通知作为 fallback（Service 被杀时通知仍可见）
-        val assistIntent = Intent(requireContext(), RemoteAssistActivity::class.java).apply {
-            putExtra("from_name", request.fromName)
-            putExtra("from_id", request.fromId)
-            putExtra("remaining_seconds", request.remainingSeconds)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        }
-        val fullScreenPendingIntent = PendingIntent.getActivity(
-            requireContext(), 0, assistIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_MUTABLE else 0)
-        )
-        val notification = NotificationCompat.Builder(requireContext(), "remote_assist_channel")
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
-            .setContentTitle("📞 远程协助请求")
-            .setContentText("${request.fromName} 请求协助操作您的手机")
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_CALL)
-            .setFullScreenIntent(fullScreenPendingIntent, true)
-            .setContentIntent(fullScreenPendingIntent)
-            .setAutoCancel(true)
-            .setTimeoutAfter(request.remainingSeconds * 1000L)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .build()
-        val nm = requireContext().getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(3001, notification)
-
-        // v19.7: 如果 FallDetectionService 没运行，HomeFragment 负责 startActivity
-        // 如果 Service 在运行，由 Service 统一负责（避免双 startActivity）
-        val serviceRunning = com.falldetector.diedaobao.service.FallDetectionService.isRunning
-        if (!serviceRunning) {
-            try {
-                startActivity(assistIntent)
-                AppLogger.i("HomeFragment", "Service未运行，HomeFragment负责startActivity")
-            } catch (e: Exception) {
-                AppLogger.w("HomeFragment", "startActivity被拦截: ${e.message}")
-            }
-        } else {
-            AppLogger.i("HomeFragment", "Service运行中，由Service负责startActivity")
-        }
+        AppLogger.i("HomeFragment", "收到协助请求 from=${request.fromName}，通知已由FallDetectionService统一处理")
+        // 通知和Activity启动已全部移至 FallDetectionService 统一处理
+        // HomeFragment 不再发通知，避免同一请求触发两次弹窗
     }
 
     private fun setupRemoteAssist() {

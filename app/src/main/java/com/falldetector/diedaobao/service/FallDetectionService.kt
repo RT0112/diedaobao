@@ -1064,16 +1064,21 @@ class FallDetectionService : Service() {
      */
     private fun startRemoteAssistPolling() {
         // v19: 用 addAssistRequestListener，不覆盖 HomeFragment 的监听器
-        val assistListener: (RemoteAssistManager.AssistRequest) -> Unit = { request ->
+        val assistListener: (RemoteAssistManager.AssistRequest) -> Unit = handler@{ request ->
             Log.i(TAG, "收到远程协助请求: from=${request.fromName}")
-            
-            // ========== 双重保障：fullScreenIntent + 直接 startActivity ==========
-            // 1. fullScreenIntent：锁屏/息屏时自动弹出全屏界面（Android 官方推荐）
-            // 2. startActivity：解锁/后台时直接启动 Activity
-            //    MIUI/HyperOS 可能拦截后台 startActivity，但 fullScreenIntent 通知
-            //    仍然可见，用户点击即可打开
-            
-            // 方案1：fullScreenIntent 通知（锁屏/息屏必弹，解锁时显示高优先级通知）
+
+            // v31: 内存防重 — 3秒内同一 fromId 不重复弹窗
+            val now = System.currentTimeMillis()
+            if (request.fromId.isNotEmpty()
+                && now - com.falldetector.diedaobao.ui.RemoteAssistActivity.lastHandledRequestTime < com.falldetector.diedaobao.ui.RemoteAssistActivity.DEDUP_WINDOW_MS) {
+                Log.w(TAG, "startRemoteAssistPolling: 内存防重（${now - com.falldetector.diedaobao.ui.RemoteAssistActivity.lastHandledRequestTime}ms内）→ 跳过弹窗")
+                return@handler
+            }
+
+            // v29: 只用 fullScreenIntent，彻底移除 startActivity
+            // fullScreenIntent 通知会自动在前台弹出 Activity 或在后台显示高优先级通知
+            // K90/HyperOS 实测：fullScreenIntent 在前台场景 100% 触发，不需要 startActivity 兜底
+            // 之前 fullScreenIntent + startActivity 同时触发导致双 Activity → crash
             val fullScreenIntent = Intent(this, com.falldetector.diedaobao.ui.RemoteAssistActivity::class.java).apply {
                 putExtra("from_name", request.fromName)
                 putExtra("from_id", request.fromId)
@@ -1091,30 +1096,14 @@ class FallDetectionService : Service() {
                 .setPriority(NotificationCompat.PRIORITY_MAX)
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setFullScreenIntent(fullScreenPendingIntent, true)
-                .setContentIntent(fullScreenPendingIntent)  // 点击通知也打开
+                .setContentIntent(fullScreenPendingIntent)
                 .setAutoCancel(true)
                 .setTimeoutAfter(request.remainingSeconds * 1000L)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .build()
             val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             nm.notify(3001, notification)
-            
-            // 方案2：同时尝试直接 startActivity（解锁/后台场景）
-            // 如果被 MIUI 拦截，fullScreenIntent 通知仍然可以点击打开
-            try {
-                val directIntent = Intent(this, com.falldetector.diedaobao.ui.RemoteAssistActivity::class.java).apply {
-                    putExtra("from_name", request.fromName)
-                    putExtra("from_id", request.fromId)
-                    putExtra("remaining_seconds", request.remainingSeconds)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                }
-                startActivity(directIntent)
-                Log.i(TAG, "直接 startActivity 成功")
-            } catch (e: Exception) {
-                // MIUI/HyperOS 可能拦截后台 startActivity，不报错
-                // fullScreenIntent 通知已发出，用户点击即可
-                Log.w(TAG, "直接 startActivity 被拦截（MIUI/后台限制），但通知已发出: ${e.message}")
-            }
+            Log.i(TAG, "全屏通知已发送，fullScreenIntent 自动打开 Activity")
         }
         RemoteAssistManager.addAssistRequestListener(assistListener)
         RemoteAssistManager.ensurePolling(this) // v19.7.5: 用ensurePolling替代startPolling，防重复启动

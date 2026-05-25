@@ -48,6 +48,12 @@ class RemoteAssistActivity : AppCompatActivity() {
         private const val REQUEST_MEDIA_PROJECTION = 1001
         private const val REQUEST_ACCESSIBILITY = 1002
         private const val AUTO_REJECT_MS = 60_000L
+
+        // v28: 进程级防重复 — 内存时间戳，替代SP dedup（SP.apply是异步的，两个近同时的Activity都读旧值）
+        @Volatile
+        @JvmField
+        var lastHandledRequestTime = 0L
+        const val DEDUP_WINDOW_MS = 3000L  // 3秒内同from_id视为重复
     }
 
     // UI 组件
@@ -69,11 +75,23 @@ class RemoteAssistActivity : AppCompatActivity() {
     private var guardianId: String? = null
     
     // v23: 重复请求检测 — 用SP持久化，Activity重建后不丢失
+    // v31: 加时间窗口，永久去重改为60秒内去重（解决老人拒绝后60秒内无法再请求的问题）
     private fun getLastHandledFromId(): String {
-        return getSharedPreferences("assist_dedup", MODE_PRIVATE).getString("last_handled_from_id", "") ?: ""
+        val prefs = getSharedPreferences("assist_dedup", MODE_PRIVATE)
+        val lastId = prefs.getString("last_handled_from_id", "") ?: ""
+        val lastTime = prefs.getLong("last_handled_sp_time", 0L)
+        val now = System.currentTimeMillis()
+        if (lastId.isNotEmpty() && now - lastTime < 60_000L) {
+            return lastId  // 60秒内有效
+        }
+        return ""  // 超时失效，允许新请求
     }
     private fun setLastHandledFromId(id: String) {
-        getSharedPreferences("assist_dedup", MODE_PRIVATE).edit().putString("last_handled_from_id", id).apply()
+        val prefs = getSharedPreferences("assist_dedup", MODE_PRIVATE)
+        prefs.edit()
+            .putString("last_handled_from_id", id)
+            .putLong("last_handled_sp_time", System.currentTimeMillis())
+            .apply()
     }
 
     // 状态
@@ -179,15 +197,11 @@ class RemoteAssistActivity : AppCompatActivity() {
                 startAutoRejectCountdown()
             }
 
-            // v14: 注册自动授权成功广播
-            registerAutoPermissionReceiver()
+            // v14: 注册自动授权成功广播 — v33移到onResume延迟注册，避免onCreate崩溃
         } catch (e: Exception) {
-            // v19.7.6: 用 Log.e 代替 AppLogger（AppLogger 可能未初始化）
             Log.e(TAG, "onCreate 异常!", e)
-            // 写入本地文件（不依赖任何工具类）
-            writeCrashLog("onCreate", e)
-            // v20: 自动重启 App，老人不需要手动操作
-            restartApp("onCreate崩溃")
+            finish()
+            return
         }
     }
 
@@ -235,9 +249,7 @@ class RemoteAssistActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "onNewIntent 异常!", e)
-            writeCrashLog("onNewIntent", e)
-            // v20: 自动重启 App
-            restartApp("onNewIntent崩溃")
+            finish()
         }
     }
 
@@ -252,31 +264,42 @@ class RemoteAssistActivity : AppCompatActivity() {
         val newFromId = intent?.extras?.getString("from_id", "") ?: ""
         val hadActiveSession = isAssisting
         val previousGuardianId = guardianId
-        val lastHandled = getLastHandledFromId()
-        
-        // v27: 先检测重复请求，再cleanup — 避免cleanup重置状态后误判
+        val now = System.currentTimeMillis()
+
+        // v28: 进程级内存时间戳防重复（替代SP dedup的异步问题）
+        // 场景: fullScreenIntent + 直接startActivity 近同时创建两个Activity实例
+        // SP.apply是异步的，两个实例都读到旧值 → 都执行 → crash
+        if (newFromId.isNotEmpty() && now - lastHandledRequestTime < DEDUP_WINDOW_MS) {
+            Log.w(TAG, "handleNewRequest: 内存防重 (${now - lastHandledRequestTime}ms内重复 from_id=$newFromId)")
+            return false
+        }
+
         // 场景1: 有活跃会话 + 同一guardian重复请求 → 顶掉旧会话，继续处理（兜底机制）
         if (hadActiveSession && previousGuardianId == newFromId && newFromId.isNotEmpty()) {
             Log.w(TAG, "handleNewRequest: 同一监护人重复请求(活跃会话)，顶掉旧会话重新处理")
             // 不return，继续执行cleanupAssist()后处理新请求
         }
-        // 场景2: 无活跃会话 + from_id与上次相同（WS+HTTP双推或Activity重建）→ 忽略，避免重复弹窗
+        // 场景2: 无活跃会话 + from_id与上次SP相同 → 忽略（Activity重建后SP仍能工作）
+        val lastHandled = getLastHandledFromId()
         if (!hadActiveSession && newFromId.isNotEmpty() && newFromId == lastHandled) {
-            Log.i(TAG, "handleNewRequest: 重复请求(from_id=$newFromId)，忽略（无活跃会话）")
+            Log.i(TAG, "handleNewRequest: SP防重(from_id=$newFromId)，忽略")
             return false
         }
-        
+
+        // v28: 记录内存时间戳（进程级、同步、比SP快几百万倍）
+        lastHandledRequestTime = now
+
         // 通过重复检测 → 清理旧会话
         cleanupAssist()
-        
+
         // v21: 只有不同家属的请求才调 endAssist
         if (hadActiveSession && previousGuardianId != newFromId && newFromId.isNotEmpty()) {
             scope.launch {
                 RemoteAssistManager.endAssist(this@RemoteAssistActivity)
             }
         }
-        
-        // 记录已处理的from_id（持久化到SP）
+
+        // 记录已处理的from_id（持久化SP，Activity重建后复用）
         setLastHandledFromId(newFromId)
 
         // 重置所有状态
@@ -756,6 +779,8 @@ class RemoteAssistActivity : AppCompatActivity() {
             REQUEST_MEDIA_PROJECTION -> {
                 if (resultCode == Activity.RESULT_OK && data != null) {
                     waitingForMediaProjection = false  // v26: 授权结果已收到，重置标志
+                    // v28: 权限已授予，强制关掉回放期望，防止后续错误触发回放（auto-scrolling的根因之一）
+                    RemoteAssistService.instance?.getPermissionRecordManager()?.setExpectingReplay(false)
                     // v17: 延迟停止录制，给 TouchRecordOverlay 时间完成回调
                     // 之前立即 stopMpRecording() 会导致 overlay 回调还没执行完就被停止
                     Handler(Looper.getMainLooper()).postDelayed({
@@ -870,6 +895,9 @@ class RemoteAssistActivity : AppCompatActivity() {
         captureService?.startAfterBind(pendingResultCode, pendingData!!, pendingElderId, pendingGuardianId)
         Log.i(TAG, "屏幕采集已启动")
 
+        // v28: 采集已启动，彻底重置回放期望 — 防止后续任何系统弹窗误触发权限回放导致自动滑动
+        RemoteAssistService.instance?.getPermissionRecordManager()?.setExpectingReplay(false)
+
         // 启动信号轮询：从云端拉取子女端的触控指令，分发给 RemoteAssistService 执行
         RemoteAssistManager.startSignalPolling(this)
         Log.i(TAG, "信号轮询已启动")
@@ -954,7 +982,7 @@ class RemoteAssistActivity : AppCompatActivity() {
      */
     private fun restartApp(reason: String) {
         try {
-            Log.i(TAG, "重启App: $reason")
+            Log.e(TAG, "！！！restartApp: $reason（仅finish，不杀进程保住WS连接）")
             val intent = packageManager.getLaunchIntentForPackage(packageName)
             intent?.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             startActivity(intent)
@@ -962,8 +990,8 @@ class RemoteAssistActivity : AppCompatActivity() {
             Log.e(TAG, "重启App失败", e)
         } finally {
             finish()
-            // 杀进程确保干净重启，避免脏状态
-            android.os.Process.killProcess(android.os.Process.myPid())
+            // 只 finish，不杀进程
+            // killProcess 会把 WS 连接、FallDetectionService 全部杀掉，导致子端断连
         }
     }
 
