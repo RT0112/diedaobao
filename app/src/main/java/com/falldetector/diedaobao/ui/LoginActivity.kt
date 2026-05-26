@@ -17,7 +17,6 @@ import com.falldetector.diedaobao.cloud.WSClient
 import com.falldetector.diedaobao.databinding.ActivityLoginBinding
 import com.falldetector.diedaobao.util.AppLogger
 import kotlinx.coroutines.launch
-import com.falldetector.diedaobao.cloud.WSClient
 
 class LoginActivity : AppCompatActivity() {
 

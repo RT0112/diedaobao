@@ -183,6 +183,10 @@ object RemoteAssistManager {
                     is WSClient.WSEvent.AssistCancel -> {
                         Log.i(TAG, "[WS] 收到协助取消信号")
                         stopSignalPolling()
+                        // v29: 通知Activity关闭请求页面
+                        withContext(Dispatchers.Main) {
+                            onSessionEnded?.invoke()
+                        }
                     }
                 }
             }

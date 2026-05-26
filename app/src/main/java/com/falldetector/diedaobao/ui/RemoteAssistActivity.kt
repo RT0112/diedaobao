@@ -44,10 +44,12 @@ import kotlinx.coroutines.*
 class RemoteAssistActivity : AppCompatActivity() {
 
     companion object {
-        private const val TAG = "RemoteAssistActivity"
-        private const val REQUEST_MEDIA_PROJECTION = 1001
-        private const val REQUEST_ACCESSIBILITY = 1002
-        private const val AUTO_REJECT_MS = 60_000L
+        const val TAG = "RemoteAssistActivity"
+        const val REQUEST_MEDIA_PROJECTION = 1001
+        const val REQUEST_ACCESSIBILITY = 1002
+        const val AUTO_REJECT_MS = 60_000L
+        const val DEDUP_WINDOW_MS = 3000L
+        var lastHandledRequestTime = 0L
     }
 
     // UI 组件
@@ -161,7 +163,8 @@ class RemoteAssistActivity : AppCompatActivity() {
                         onAllowClicked()
                     } else {
                         showRequestDialog()
-                        // v28: 重复请求不重启倒计时（防重入）
+                        // v29: 重复请求也要重启倒计时（handleNewRequest已取消旧的）
+                        startAutoRejectCountdown()
                     }
                 }
                 return
@@ -217,7 +220,8 @@ class RemoteAssistActivity : AppCompatActivity() {
                         onAllowClicked()
                     } else {
                         showRequestDialog()
-                        // v28: 重复请求不重启倒计时（防重入）
+                        // v29: 重复请求也要重启倒计时（handleNewRequest已取消旧的）
+                        startAutoRejectCountdown()
                     }
                 }
                 return
@@ -295,6 +299,8 @@ class RemoteAssistActivity : AppCompatActivity() {
         requestFromName = extras?.getString("from_name", "家属") ?: "家属"
         requestFromId = extras?.getString("from_id", "") ?: ""
         remainingSeconds = extras?.getInt("remaining_seconds", 60) ?: 60
+        // v31: 更新请求时间（供 FallDetectionService 内存防重用）
+        lastHandledRequestTime = System.currentTimeMillis()
         return true
     }
 
@@ -968,7 +974,14 @@ class RemoteAssistActivity : AppCompatActivity() {
      * 延迟3秒查云端状态，如果仍在协助中则忽略断连信号
      */
     private fun verifyAndFinish(reason: String) {
-        if (!isAssisting) return  // 已不在协助中，忽略
+        if (!isAssisting) {
+            // v29: 还没开始协助，直接关闭请求页面（不需要验证）
+            Log.i(TAG, "verifyAndFinish: 未在协助中，直接关闭（$reason）")
+            cleanupAssist()
+            Toast.makeText(this@RemoteAssistActivity, "$reason", Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
         scope.launch {
             delay(3000L)  // 等待3秒
             val status = RemoteAssistManager.checkAssistStatus(this@RemoteAssistActivity)
