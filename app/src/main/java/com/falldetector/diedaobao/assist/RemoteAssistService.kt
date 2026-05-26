@@ -77,9 +77,14 @@ class RemoteAssistService : AccessibilityService() {
 
         when (eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                // v18: 只有 expectingReplay=true 时才触发自动回放
-                // 录制完成后 isRecording=false 但 expectingReplay=false，不会误触
-                if (permissionRecordManager.isExpectingReplay()
+                // v28: 额外检查 ScreenCaptureService 是否在运行
+                // 如果已在协助中（采集了屏幕），即使 expectingReplay=true 也不回放
+                // 因为此时 system-UI 窗口可能是协助期间的其他通知（充电/短信等），
+                // 回放录制坐标点过去会导致「自动滑动」。
+                if (com.falldetector.diedaobao.assist.ScreenCaptureService.isRunning) {
+                    // 已在协助中，不触发回放
+                    // 但打印日志方便排查
+                } else if (permissionRecordManager.isExpectingReplay()
                     && !permissionRecordManager.isCurrentlyRecording()
                     && !permissionRecordManager.isReplayingActive
                     && permissionRecordManager.hasPermissionDialog()) {

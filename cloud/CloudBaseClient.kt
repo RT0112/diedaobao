@@ -413,6 +413,36 @@ object CloudBaseClient {
     }
 
     /**
+     * 子女端提交绑定码，完成家属绑定
+     * @param context Context
+     * @param bindCode 6位绑定码
+     * @return elderId 或 null（失败）
+     */
+    suspend fun submitBindCode(context: Context, bindCode: String): String? {
+        val userId = getUserId(context) ?: return null
+        val body = JSONObject().apply {
+            put("bindCode", bindCode)
+            put("guardianId", userId)
+        }
+        return try {
+            val response = callFunction("bind-family", body)
+            if (response != null && response.optInt("code", 0) == 200) {
+                val elderId = response.optString("elderId")
+                Log.i(TAG, "绑定成功: elderId=$elderId")
+                // 绑定成功后重连WS，确保收到后续推送
+                com.falldetector.diedaobao.cloud.WSClient.connect(context)
+                elderId
+            } else {
+                AppLogger.e(TAG, "绑定失败: ${response?.optString("message", "unknown")}")
+                null
+            }
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "绑定异常: ${e.message}")
+            null
+        }
+    }
+
+    /**
      * 获取围栏数据缓存（供本地Haversine检测用，不每次调云函数check）
      * 从云端拉取围栏列表，解析为本地可用的数据结构
      */

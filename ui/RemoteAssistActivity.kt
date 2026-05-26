@@ -356,16 +356,24 @@ class RemoteAssistActivity : AppCompatActivity() {
 
         // 同意请求
         scope.launch {
-            val result = RemoteAssistManager.respondToRequest(this@RemoteAssistActivity, true)
-            runOnUiThread {
-                if (result.success) {
-                    guardianId = result.guardianId
-                    // 用 intent 传来的 requestFromId（老人自己的 userId）
-                    // ⚠️ 不能用 getUserId()——family binding 会把 guardian 的 ID 写入 SharedPreferences，
-                    //    导致 ScreenCaptureService 上传帧到错误的文档，子女端永远拉不到帧
-                    startPermissionFlow()
-                } else {
-                    Toast.makeText(this@RemoteAssistActivity, result.message, Toast.LENGTH_LONG).show()
+            try {
+                val result = RemoteAssistManager.respondToRequest(this@RemoteAssistActivity, true)
+                runOnUiThread {
+                    if (result.success) {
+                        guardianId = result.guardianId
+                        // 用 intent 传来的 requestFromId（老人自己的 userId）
+                        // ⚠️ 不能用 getUserId()——family binding 会把 guardian 的 ID 写入 SharedPreferences，
+                        //    导致 ScreenCaptureService 上传帧到错误的文档，子女端永远拉不到帧
+                        startPermissionFlow()
+                    } else {
+                        Toast.makeText(this@RemoteAssistActivity, result.message, Toast.LENGTH_LONG).show()
+                        finish()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "onAllowClicked 异常", e)
+                runOnUiThread {
+                    Toast.makeText(this@RemoteAssistActivity, "请求失败: ${e.message}", Toast.LENGTH_LONG).show()
                     finish()
                 }
             }

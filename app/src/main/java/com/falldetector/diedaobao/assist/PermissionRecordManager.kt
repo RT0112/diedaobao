@@ -210,12 +210,18 @@ class PermissionRecordManager(private val service: RemoteAssistService) {
      * 录制完成后不会设此标志，所以 onAccessibilityEvent 不会误触回放。
      */
     fun setExpectingReplay(expect: Boolean) {
+        val wasExpecting = expectingReplay
         expectingReplay = expect
-        // v19.7.1: 新会话请求回放时重置冷却期，否则上次回放的冷却会挡住本次
         if (expect) {
-            lastReplayFinishTime = 0L
+            lastReplayFinishTime = 0L  // v19.7.1: 新会话请求回放时重置冷却期
+        } else if (wasExpecting && !expect) {
+            // v28: 主动关闭回放期望时必须取消所有已排队的步骤回调
+            // 否则 handler.postDelayed 的 replayNextStep 会在权限已授权后继续执行，
+            // 点击错误位置，导致自动滑动（auto-scrolling bug 根因）
+            handler.removeCallbacksAndMessages(null)
+            isReplaying = false
+            AppLogger.i(TAG, "setExpectingReplay: false，已取消所有待执行步骤回调")
         }
-        AppLogger.i(TAG, "setExpectingReplay: $expect")
     }
 
     fun isExpectingReplay(): Boolean = expectingReplay
