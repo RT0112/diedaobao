@@ -233,13 +233,17 @@ function handleAuth(ws, msg) {
       // 优先使用 token 中的 userId，但如果为 null 则尝试使用 msg.data.userId（guardian app 会传正确的 userId）
       userId = decoded.userId || (msg.data && msg.data.userId) || decoded.accountId
     } catch (e) {
+      console.log(`[WS] 认证失败: token无效, error=${e.message}, token=${token.substring(0, 20)}...`)
       return wsSend(ws, { type: 'auth_result', success: false, message: 'token 无效或已过期' })
     }
   } else if (msg.data && msg.data.userId) {
     userId = msg.data.userId  // 兼容旧版 APP（无 token）
+    console.log(`[WS] 认证(无token): userId=${userId}, role=${msg.data.role}`)
   } else if (msg.userId) {
     userId = msg.userId  // 兼容更旧的格式
+    console.log(`[WS] 认证(旧格式): userId=${userId}`)
   } else {
+    console.log(`[WS] 认证失败: 缺少userId/token, msg=${JSON.stringify(msg).substring(0, 200)}`)
     return wsSend(ws, { type: 'auth_result', success: false, message: '缺少 userId 或 token' })
   }
 
