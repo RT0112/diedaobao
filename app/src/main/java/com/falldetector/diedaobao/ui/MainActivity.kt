@@ -16,6 +16,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import com.falldetector.diedaobao.R
+import com.falldetector.diedaobao.cloud.CloudBaseClient
+import com.falldetector.diedaobao.cloud.WSClient
 import com.falldetector.diedaobao.databinding.ActivityMainBinding
 import com.falldetector.diedaobao.service.FallDetectionService
 import com.google.android.material.bottomnavigation.BottomNavigationView
@@ -54,6 +56,12 @@ class MainActivity : AppCompatActivity() {
         // 检查是否需要引导权限设置
         if (!hasAllPermissions()) {
             showPermissionGuideDialog()
+        }
+
+        // 兜底：确保WebSocket已连接（如果已注册但WS未连接）
+        if (CloudBaseClient.isRegistered(this) && !WSClient.isWSConnected()) {
+            Log.i("MainActivity", "WebSocket未连接，自动重连")
+            WSClient.connect(this)
         }
     }
 

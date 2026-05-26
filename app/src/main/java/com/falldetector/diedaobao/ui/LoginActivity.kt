@@ -6,12 +6,14 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.util.Log
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.falldetector.diedaobao.cloud.CloudBaseClient
+import com.falldetector.diedaobao.cloud.WSClient
 import com.falldetector.diedaobao.databinding.ActivityLoginBinding
 import com.falldetector.diedaobao.util.AppLogger
 import kotlinx.coroutines.launch
@@ -291,6 +293,11 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun goToMain() {
+        // 注册/登录成功后，确保WebSocket连接
+        if (CloudBaseClient.isRegistered(this)) {
+            Log.i("LoginActivity", "用户已注册，启动WebSocket连接")
+            WSClient.connect(this)
+        }
         startActivity(Intent(this, MainActivity::class.java))
         finish()
     }
