@@ -591,12 +591,10 @@ app.post('/remote-assist', (req, res) => {
       const ra = user.remoteAssist ? JSON.parse(user.remoteAssist) : {}
       if (ra.status !== 'active') return res.json({ code: 400, message: '当前没有活跃的协助会话' })
 
-      // v21: 只通知家属被顶掉，不广播给老人自己
-      // pushToRoom 会发给老人→触发 onSessionEnded→finish()，导致协助页面闪退
-      const raInfo = user.remoteAssist ? JSON.parse(user.remoteAssist) : {}
-      if (raInfo.requestFrom) {
-        sendToUser(raInfo.requestFrom, { type: 'assist_end', data: { from: from || userId, reason: 'ended', timestamp: Date.now() } })
-      }
+      // v30: 推送给老人端（targetId），让老人端关闭协助会话
+      // 原代码误推给子女端（requestFrom），导致老人端收不到结束信号
+      sendToUser(targetId, { type: 'assist_end', data: { from: from || userId, reason: 'ended', timestamp: Date.now() } })
+      Log.log(`[AssistEnd] 已推送assist_end给老人端 ${targetId}`)
 
       // 清理
       db.prepare('DELETE FROM screen_frames WHERE id=?').run(`frame_${targetId}`)
