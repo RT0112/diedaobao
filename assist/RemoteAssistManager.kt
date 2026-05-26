@@ -39,6 +39,10 @@ object RemoteAssistManager {
     // 请求去重：防止同一个请求被 HomeFragment + FallDetectionService 同时触发导致双弹窗
     private var lastNotifiedRequestId: String = ""
 
+    // v24: 会话保护 — 防止旧会话的assist_end信号杀掉新会话
+    private var currentSessionId: String? = null
+    private var sessionStartTime: Long = 0L
+
     /**
      * 注册协助请求监听器（可注册多个，不会被覆盖）
      */
@@ -53,6 +57,33 @@ object RemoteAssistManager {
      */
     fun removeAssistRequestListener(listener: (AssistRequest) -> Unit) {
         assistRequestListeners.remove(listener)
+    }
+
+    /**
+     * v24: 标记新请求开始（RemoteAssistActivity确认新请求后调用）
+     * 启动3秒保护窗口，期间忽略assist_end信号，防止旧会话延迟信号杀新会话
+     */
+    fun markNewRequest() {
+        sessionStartTime = System.currentTimeMillis()
+        Log.i(TAG, "markNewRequest: 保护窗口已启动, sessionStartTime=$sessionStartTime")
+    }
+
+    /**
+     * v24: 设置当前会话ID（respondToRequest成功后调用）
+     * 用于精确匹配end信号，只处理当前会话的end
+     */
+    fun setCurrentSession(sessionId: String?) {
+        currentSessionId = sessionId
+        sessionStartTime = System.currentTimeMillis()
+        Log.i(TAG, "setCurrentSession: sessionId=$sessionId, 保护窗口已刷新")
+    }
+
+    /**
+     * v24: 清除会话信息（cleanupAssist时调用）
+     */
+    fun clearCurrentSession() {
+        currentSessionId = null
+        sessionStartTime = 0L
     }
 
     // 兼容旧代码：onAssistRequest 仍可赋值，会同时添加到监听列表
@@ -158,7 +189,21 @@ object RemoteAssistManager {
                     }
 
                     is WSClient.WSEvent.AssistEnd -> {
-                        Log.i(TAG, "[WS] 收到协助结束信号")
+                        // v24: 会话保护
+                        // 方案1: sessionId精确匹配 — 旧会话的end信号sessionId不匹配，直接忽略
+                        if (currentSessionId != null && event.sessionId != null && event.sessionId != currentSessionId) {
+                            Log.w(TAG, "[WS] assist_end sessionId不匹配: 收到=${event.sessionId}, 当前=$currentSessionId，忽略（旧会话信号）")
+                            return@collect
+                        }
+                        // 方案2: 时间窗口保护（sessionId为空时的兜底）
+                        val timeSinceStart = System.currentTimeMillis() - sessionStartTime
+                        if (sessionStartTime > 0 && timeSinceStart < 3000) {
+                            Log.w(TAG, "[WS] 收到assist_end但新会话刚启动${timeSinceStart}ms，忽略（可能是旧会话延迟信号）")
+                            return@collect
+                        }
+                        Log.i(TAG, "[WS] 收到协助结束信号 (currentSessionId=$currentSessionId, eventSessionId=${event.sessionId})")
+                        currentSessionId = null
+                        sessionStartTime = 0L
                         stopSignalPolling()
                         withContext(Dispatchers.Main) {
                             onSessionEnded?.invoke()
@@ -166,6 +211,12 @@ object RemoteAssistManager {
                     }
 
                     is WSClient.WSEvent.AssistCancel -> {
+                        // v24: 会话保护 — 新会话启动3秒内忽略旧会话的cancel信号
+                        val timeSinceStart = System.currentTimeMillis() - sessionStartTime
+                        if (sessionStartTime > 0 && timeSinceStart < 3000) {
+                            Log.w(TAG, "[WS] 收到assist_cancel但新会话刚启动${timeSinceStart}ms，忽略")
+                            return@collect
+                        }
                         Log.i(TAG, "[WS] 收到协助取消信号")
                         stopSignalPolling()
                     }
@@ -528,7 +579,15 @@ object RemoteAssistManager {
 
         when {
             signal.type == "end_session" -> {
-                AppLogger.i(TAG, "收到 end_session 信号，停止信号轮询")
+                // v24: 会话保护 — 新会话启动3秒内忽略旧会话的end_session信号
+                val timeSinceStart = System.currentTimeMillis() - sessionStartTime
+                if (sessionStartTime > 0 && timeSinceStart < 3000) {
+                    AppLogger.w(TAG, "收到end_session但新会话刚启动${timeSinceStart}ms，忽略（可能是旧会话延迟信号）")
+                    return
+                }
+                AppLogger.i(TAG, "收到 end_session 信号，停止信号轮询 (currentSessionId=$currentSessionId)")
+                currentSessionId = null
+                sessionStartTime = 0L
                 stopSignalPolling()
                 // 不调 endAssist（子女端已调过，云端已清理）
                 // 通知 UI 层关闭协助界面

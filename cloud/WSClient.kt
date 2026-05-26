@@ -181,9 +181,10 @@ object WSClient {
                     }
                 }
                 "assist_end" -> {
-                    Log.i(TAG, "收到协助结束")
+                    val endSessionId = data?.optString("sessionId", null)
+                    Log.i(TAG, "收到协助结束, sessionId=$endSessionId")
                     scope.launch {
-                        _events.emit(WSEvent.AssistEnd)
+                        _events.emit(WSEvent.AssistEnd(sessionId = endSessionId))
                     }
                 }
                 "assist_signal" -> {
@@ -398,7 +399,7 @@ object WSClient {
             val guardianId: String
         ) : WSEvent()
         
-        object AssistEnd : WSEvent()
+        data class AssistEnd(val sessionId: String? = null) : WSEvent()
         
         /** 触控/导航键信令 */
         data class AssistSignal(

@@ -248,6 +248,9 @@ class RemoteAssistActivity : AppCompatActivity() {
         requestFromName = extras?.getString("from_name", "家属") ?: "家属"
         requestFromId = extras?.getString("from_id", "") ?: ""
         remainingSeconds = extras?.getInt("remaining_seconds", 60) ?: 60
+
+        // v24: 标记新请求开始，启动会话保护窗口（3秒内忽略旧会话end信号）
+        RemoteAssistManager.markNewRequest()
         return true
     }
 
@@ -361,6 +364,8 @@ class RemoteAssistActivity : AppCompatActivity() {
                 runOnUiThread {
                     if (result.success) {
                         guardianId = result.guardianId
+                        // v24: 设置当前会话ID，启用sessionId匹配保护
+                        RemoteAssistManager.setCurrentSession(result.sessionId)
                         // 用 intent 传来的 requestFromId（老人自己的 userId）
                         // ⚠️ 不能用 getUserId()——family binding 会把 guardian 的 ID 写入 SharedPreferences，
                         //    导致 ScreenCaptureService 上传帧到错误的文档，子女端永远拉不到帧
@@ -495,6 +500,11 @@ class RemoteAssistActivity : AppCompatActivity() {
     private fun cleanupAssist() {
         Log.i(TAG, "cleanupAssist: isAssisting=$isAssisting, serviceBound=$serviceBound")
         isAssisting = false
+
+        // v24: 清除会话信息，防止残留保护窗口
+        RemoteAssistManager.clearCurrentSession()
+        // v24: 清除onSessionEnded回调，防止残留回调误杀新会话
+        RemoteAssistManager.onSessionEnded = null
 
         // v19: 重置 mp_granted，防止下次误判（上次残留 true 会导致回放逻辑认为权限已授权）
         getSharedPreferences("cloudbase", MODE_PRIVATE)
@@ -655,6 +665,8 @@ class RemoteAssistActivity : AppCompatActivity() {
             runOnUiThread {
                 if (result.success) {
                     guardianId = result.guardianId
+                    // v24: 设置当前会话ID
+                    RemoteAssistManager.setCurrentSession(result.sessionId)
                     requestMediaProjection()
                 } else {
                     Toast.makeText(this@RemoteAssistActivity, result.message, Toast.LENGTH_LONG).show()

@@ -163,20 +163,10 @@ object RemoteAssistManager {
                     is WSClient.WSEvent.AssistEnd -> {
                         Log.i(TAG, "[WS] 收到协助结束信号")
                         stopSignalPolling()
-                        // v28: 延迟验证后再回调，防止 WS 抖动误触发
-                        withContext(Dispatchers.IO) {
-                            delay(DISCONNECT_VERIFY_DELAY_MS)
-                            val status = checkAssistStatus(appContext ?: return@withContext)
-                            Log.i(TAG, "[WS] 断连验证: status=$status")
-                            if (status == "active" || status == "assisting") {
-                                // 仍在协助中，WS 抖动误触发，忽略
-                                Log.w(TAG, "[WS] AssistEnd信号但云端状态仍为active，忽略（WS抖动）")
-                                return@withContext
-                            }
-                            withContext(Dispatchers.Main) {
-                                onSessionEnded?.invoke()
-                                // v29: 不在此时置空，等到Activity销毁后再置空
-                            }
+                        // ✅ v33: 直接关闭，不再验证云端状态（防止正常结束被误判为抖动）
+                        withContext(Dispatchers.Main) {
+                            onSessionEnded?.invoke()
+                            // v29: 不在此时置空，等到Activity销毁后再置空
                         }
                     }
 
