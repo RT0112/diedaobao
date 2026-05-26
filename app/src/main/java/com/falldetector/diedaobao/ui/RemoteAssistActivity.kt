@@ -311,6 +311,9 @@ class RemoteAssistActivity : AppCompatActivity() {
         remainingSeconds = extras?.getInt("remaining_seconds", 60) ?: 60
         // v31: 更新请求时间（供 FallDetectionService 内存防重用）
         lastHandledRequestTime = System.currentTimeMillis()
+
+        // v24: 标记新请求开始，启动3秒保护窗口（忽略旧会话的end信号）
+        RemoteAssistManager.markNewRequest()
         return true
     }
 
@@ -573,6 +576,11 @@ class RemoteAssistActivity : AppCompatActivity() {
         Log.i(TAG, "cleanupAssist: isAssisting=$isAssisting, serviceBound=$serviceBound")
         isAssisting = false
         waitingForMediaProjection = false  // v26: 重置标志
+
+        // v24: 清除会话保护窗口
+        RemoteAssistManager.clearCurrentSession()
+        // v24: 清除onSessionEnded回调，防止残留回调误杀新会话
+        RemoteAssistManager.onSessionEnded = null
 
         // v19: 重置 mp_granted，防止下次误判（上次残留 true 会导致回放逻辑认为权限已授权）
         getSharedPreferences("cloudbase", MODE_PRIVATE)
