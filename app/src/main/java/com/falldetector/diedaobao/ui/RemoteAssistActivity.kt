@@ -50,6 +50,7 @@ class RemoteAssistActivity : AppCompatActivity() {
         const val AUTO_REJECT_MS = 60_000L
         const val DEDUP_WINDOW_MS = 3000L
         var lastHandledRequestTime = 0L
+        var isVisible = false  // v29: 标记Activity是否可见，供FallDetectionService判重
     }
 
     // UI 组件
@@ -123,6 +124,7 @@ class RemoteAssistActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.i(TAG, "onCreate 开始, intent=$intent")
+        isVisible = true  // v29: 标记Activity可见
 
         // v19.7.6: 全局异常保护，防止闪退
         try {
@@ -138,6 +140,14 @@ class RemoteAssistActivity : AppCompatActivity() {
             )
 
             setContentView(R.layout.activity_remote_assist)
+
+            // v29: 提前设置 onSessionEnded，确保取消/结束信号能关闭Activity（不等到允许后才设）
+            RemoteAssistManager.onSessionEnded = {
+                runOnUiThread {
+                    verifyAndFinish("子女已断开")
+                }
+            }
+            Log.i(TAG, "onCreate: onSessionEnded 已提前设置")
 
             val isNewRequest = handleNewRequest(intent)
             // v23: 即使是重复请求，也要初始化UI，否则按钮无响应
@@ -305,6 +315,10 @@ class RemoteAssistActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        isVisible = false  // v29: 标记Activity不可见
+        Log.i(TAG, "onDestroy: isVisible=false")
+        RemoteAssistManager.onSessionEnded = null  // v29: Activity销毁后置空回调
+        Log.i(TAG, "onDestroy: onSessionEnded已置空")
         rejectRunnable?.let { handler.removeCallbacks(it) }
         permissionCheckRunnable?.let { handler.removeCallbacks(it) }
         isWaitingForPermission = false
@@ -880,14 +894,6 @@ class RemoteAssistActivity : AppCompatActivity() {
         RemoteAssistManager.startSignalPolling(this)
         Log.i(TAG, "信号轮询已启动")
 
-        // v28: 监听子女端主动断开（end_session 信号），加延迟验证防WS抖动
-        RemoteAssistManager.onSessionEnded = {
-            runOnUiThread {
-                // v28: 不再无条件finish，先确认是否真的结束了
-                verifyAndFinish("子女已断开")
-            }
-        }
-
         // v28: 监听推流断连，加延迟验证
         ScreenCaptureService.instance?.onGuardianDisconnected = {
             runOnUiThread {
@@ -970,33 +976,13 @@ class RemoteAssistActivity : AppCompatActivity() {
     }
 
     /**
-     * v28: 断连验证后再退出 — 防止 WS 抖动误触发
-     * 延迟3秒查云端状态，如果仍在协助中则忽略断连信号
+     * v29: 直接关闭，不验证云端状态（WS事件已确认结束）
      */
     private fun verifyAndFinish(reason: String) {
-        if (!isAssisting) {
-            // v29: 还没开始协助，直接关闭请求页面（不需要验证）
-            Log.i(TAG, "verifyAndFinish: 未在协助中，直接关闭（$reason）")
-            cleanupAssist()
-            Toast.makeText(this@RemoteAssistActivity, "$reason", Toast.LENGTH_LONG).show()
-            finish()
-            return
-        }
-        scope.launch {
-            delay(3000L)  // 等待3秒
-            val status = RemoteAssistManager.checkAssistStatus(this@RemoteAssistActivity)
-            Log.i(TAG, "断连验证: status=$status, isAssisting=$isAssisting")
-            if (status == "active" || status == "assisting") {
-                // 仍在协助中，WS抖动误触发，忽略
-                Log.w(TAG, "断连信号但云端状态仍为active，忽略（$reason）")
-                return@launch
-            }
-            withContext(Dispatchers.Main) {
-                cleanupAssist()
-                Toast.makeText(this@RemoteAssistActivity, "$reason，协助结束", Toast.LENGTH_LONG).show()
-                finish()
-            }
-        }
+        Log.i(TAG, "verifyAndFinish: 直接关闭（$reason）, isAssisting=$isAssisting")
+        cleanupAssist()
+        Toast.makeText(this@RemoteAssistActivity, "$reason，协助结束", Toast.LENGTH_LONG).show()
+        finish()
     }
 
     /**

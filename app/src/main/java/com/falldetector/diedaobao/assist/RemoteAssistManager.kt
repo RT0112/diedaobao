@@ -175,7 +175,7 @@ object RemoteAssistManager {
                             }
                             withContext(Dispatchers.Main) {
                                 onSessionEnded?.invoke()
-                                onSessionEnded = null
+                                // v29: 不在此时置空，等到Activity销毁后再置空
                             }
                         }
                     }

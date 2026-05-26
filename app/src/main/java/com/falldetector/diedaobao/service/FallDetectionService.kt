@@ -1104,6 +1104,15 @@ class FallDetectionService : Service() {
             val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             nm.notify(3001, notification)
             Log.i(TAG, "全屏通知已发送，fullScreenIntent 自动打开 Activity")
+
+            // v29: 后台场景 fullScreenIntent 可能被系统拦截，需要 startActivity 兜底
+            // 用 isVisible 判重，防止双Activity
+            if (!com.falldetector.diedaobao.ui.RemoteAssistActivity.isVisible) {
+                startActivity(fullScreenIntent)
+                Log.i(TAG, "后台场景，强制弹出Activity")
+            } else {
+                Log.i(TAG, "Activity已可见，不重复启动")
+            }
         }
         RemoteAssistManager.addAssistRequestListener(assistListener)
         RemoteAssistManager.ensurePolling(this) // v19.7.5: 用ensurePolling替代startPolling，防重复启动
