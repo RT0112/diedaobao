@@ -365,6 +365,16 @@ class FallDetector(private val context: Context? = null) {
                 return
             }
 
+            // 确认期结束，决策链前：冲击峰值门槛（2.5g）
+            // 低于2.5g的冲击不走决策链，节省ML推理时间
+            if (peakValue < 2.5f) {
+                AppLogger.w(TAG, "⚡【决策链前排除】峰值=${String.format("%.1f", peakValue)}g < 2.5g")
+                detectionState = DetectionState.MONITORING
+                resetPhysicsState()
+                confirmationXyzBuffer.clear()
+                return
+            }
+
             runMlDecisionTree(accX, accY, accZ, accMag, dynamicAcc, now, cfg)
         }
     }
