@@ -73,21 +73,10 @@ class FallDetectionApp : Application() {
                         }
                     }
                     is WSClient.WSEvent.AssistRequest -> {
-                        // 远程协助请求：直接启动 RemoteAssistActivity（需主线程）
-                        Log.i(TAG, "[WS] 收到协助请求: from=${event.guardianName}")
-                        try {
-                            withContext(Dispatchers.Main) {
-                                val intent = android.content.Intent(appRef, com.falldetector.diedaobao.ui.RemoteAssistActivity::class.java).apply {
-                                    putExtra("from_name", event.guardianName)
-                                    putExtra("from_id", event.guardianId)
-                                    putExtra("remaining_seconds", 60)
-                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                                }
-                                appRef.startActivity(intent)
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "启动协助Activity失败: ${e.message}")
-                        }
+                        // v28: 不再由 FallDetectionApp 直接启动 Activity
+                        // RemoteAssistManager.startWSEventListener 已统一处理 WS 协助请求，
+                        // 这里再处理会导致双重触发（倒计时跳快、弹两下的根因）
+                        Log.i(TAG, "[WS] 收到协助请求(由RemoteAssistManager处理): from=${event.guardianName}")
                     }
                     else -> { /* 忽略其他事件 */ }
                 }

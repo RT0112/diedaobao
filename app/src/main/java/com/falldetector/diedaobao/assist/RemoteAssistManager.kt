@@ -22,9 +22,10 @@ import org.json.JSONObject
 object RemoteAssistManager {
 
     private const val TAG = "RemoteAssistManager"
-    private const val POLL_INTERVAL_MS = 5000L
+    private const val POLL_INTERVAL_MS = 5000L  // 保留常量（兼容性）
     private const val SIGNAL_POLL_INTERVAL_MS = 500L // 信号轮询频率，500ms 保证低延迟
     private const val HEALTH_CHECK_INTERVAL_MS = 30000L // v19.7.5: 健康检查间隔30s
+    private const val DISCONNECT_VERIFY_DELAY_MS = 3000L // v28: 断连验证延迟
 
     private var isPolling = false
     private var pollJob: Job? = null
@@ -162,10 +163,20 @@ object RemoteAssistManager {
                     is WSClient.WSEvent.AssistEnd -> {
                         Log.i(TAG, "[WS] 收到协助结束信号")
                         stopSignalPolling()
-                        // v26: 用 onSessionEnded 只回调一次，防止健康检查重启轮询后重复触发
-                        withContext(Dispatchers.Main) {
-                            onSessionEnded?.invoke()
-                            onSessionEnded = null  // 清空回调，防止重复
+                        // v28: 延迟验证后再回调，防止 WS 抖动误触发
+                        withContext(Dispatchers.IO) {
+                            delay(DISCONNECT_VERIFY_DELAY_MS)
+                            val status = checkAssistStatus(appContext ?: return@withContext)
+                            Log.i(TAG, "[WS] 断连验证: status=$status")
+                            if (status == "active" || status == "assisting") {
+                                // 仍在协助中，WS 抖动误触发，忽略
+                                Log.w(TAG, "[WS] AssistEnd信号但云端状态仍为active，忽略（WS抖动）")
+                                return@withContext
+                            }
+                            withContext(Dispatchers.Main) {
+                                onSessionEnded?.invoke()
+                                onSessionEnded = null
+                            }
                         }
                     }
 
@@ -178,8 +189,12 @@ object RemoteAssistManager {
         }
     }
 
+    /**
+     * v28: 启动轮询（WS-only，砍掉HTTP poll_request）
+     * WS 已在 FallDetectionApp.onCreate() 中连接
+     * 协助请求通过 WS 推送接收，不再 HTTP 轮询
+     */
     fun startPolling(context: Context) {
-        // 修复：即使 isPolling=true，如果 pollJob 已结束，也要重启
         val jobAlive = pollJob?.isActive == true
         if (isPolling && jobAlive) return
         if (isPolling && !jobAlive) {
@@ -187,62 +202,17 @@ object RemoteAssistManager {
             isPolling = false
         }
 
-        // WebSocket 已在 FallDetectionApp.onCreate() 中连接，这里不再重复调用
         startWSEventListener(context)
 
-        // WS 已连接：不需要 HTTP 轮询请求，只需健康检查
-        if (WSClient.isWSConnected()) {
-            AppLogger.i(TAG, "WS模式：跳过HTTP poll_request轮询，使用WS推送")
-            isPolling = true
-            appContext = context.applicationContext
-            startHealthCheck()
-            return
-        }
         isPolling = true
-        Log.i(TAG, "远程协助轮询已启动（间隔: ${POLL_INTERVAL_MS}ms）")
+        appContext = context.applicationContext
+        AppLogger.i(TAG, "远程协助轮询已启动（WS-only模式）")
 
-        appContext = context.applicationContext // v19.7.5: 保存用于健康检查
-
+        // v28: 不再启动 HTTP poll_request 协程，WS 推送已完全替代
         pollJob = scope.launch {
-            while (isActive && isPolling) {
-                try {
-                    // WS连接成功后停掉HTTP轮询，避免WS+HTTP双重触发请求
-                    if (WSClient.isWSConnected()) {
-                        AppLogger.i(TAG, "WS已连接，停掉HTTP poll_request轮询")
-                        isPolling = false
-                        startHealthCheck()
-                        break
-                    }
-                    val response = pollForRequest(context)
-                    if (response.hasRequest && response.request != null) {
-                        // v26: 用 fromId+requestTime 去重（remainingSeconds每秒变化不适合做ID）
-                        val requestId = "${response.request.fromId}_${response.request.requestTime}"
-                        if (requestId == lastNotifiedRequestId) {
-                            // 重复请求，跳过
-                        } else {
-                            lastNotifiedRequestId = requestId
-                            Log.i(TAG, "收到协助请求: from=${response.request.fromName}，通知 ${assistRequestListeners.size} 个监听器")
-                            withContext(Dispatchers.Main) {
-                                for (listener in assistRequestListeners.toList()) {
-                                    try {
-                                        listener.invoke(response.request)
-                                    } catch (e: Exception) {
-                                        AppLogger.e(TAG, "监听器异常: ${e.message}")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    AppLogger.e(TAG, "轮询异常: ${e.message}")
-                }
-                delay(POLL_INTERVAL_MS)
-            }
+            delay(Long.MAX_VALUE) // 保持协程活跃以便健康检查判定
         }
 
-        // v19.7.5: 启动健康检查 — 定期检测 pollJob 是否活着，死了就自动重启
         startHealthCheck()
     }
 
@@ -303,35 +273,18 @@ object RemoteAssistManager {
     }
 
     /**
-     * 开始信号轮询（协助会话 active 后调用）
-     * 
-     * 从云端拉取子女端发送的触控信号，分发给 RemoteAssistService 执行。
-     * 信号类型：touch (click/swipe/longclick) 和 end_session
+     * v28: 信号轮询（WS-only，砍掉HTTP poll_signal）
+     * 触控信号通过 WS AssistSignal 事件接收，在 startWSEventListener 中分发。
+     * 此方法保留以兼容现有调用方，但不再启动 HTTP 轮询。
      */
     fun startSignalPolling(context: Context) {
         if (isSignalPolling) return
         isSignalPolling = true
-        var pollCount = 0
-        var idleConfirmCount = 0
-        Log.i(TAG, "信号轮询已启动（间隔: ${SIGNAL_POLL_INTERVAL_MS}ms）")
+        Log.i(TAG, "信号轮询已启动（WS-only模式，无HTTP轮询）")
 
+        // v28: 不再启动 HTTP poll_signal 协程，WS 已完全替代
         signalPollJob = scope.launch {
-            while (isActive && isSignalPolling) {
-                try {
-                    val signals = pollForSignals(context)
-                    for (sig in signals) {
-                        dispatchSignal(sig)
-                    }
-                    // v19.6: checkAssistStatus 完全禁用，改用云函数推 end_session 信号方案
-                    // 历史教训：checkAssistStatus 无论如何调参都会误断，因为时序不可控
-                    pollCount++
-                } catch (e: CancellationException) {
-                    throw e // 协程取消，不吞
-                } catch (e: Exception) {
-                    AppLogger.e(TAG, "信号轮询异常: ${e.message}")
-                }
-                delay(SIGNAL_POLL_INTERVAL_MS)
-            }
+            delay(Long.MAX_VALUE) // 保持协程活跃
         }
     }
 
@@ -346,9 +299,9 @@ object RemoteAssistManager {
     }
 
     /**
-     * v19: 检查云端协助状态（用于双重保障，防止子女端断开后老人端不知道）
+     * v28: 检查云端协助状态（公开，供断连验证使用）
      */
-    private suspend fun checkAssistStatus(context: Context): String {
+    suspend fun checkAssistStatus(context: Context): String {
         val userId = getUserId(context) ?: return "unknown"
         val body = JSONObject().apply {
             put("action", "check_status")
@@ -435,30 +388,7 @@ object RemoteAssistManager {
 
     // ==================== 内部方法 ====================
 
-    private suspend fun pollForRequest(context: Context): PollResponse {
-        val userId = getUserId(context) ?: return PollResponse(false)
-        
-        val body = JSONObject().apply {
-            put("action", "poll_request")
-            put("userId", userId)
-        }
-        
-        val response = CloudBaseClient.callFunctionRaw("remote-assist", body)
-            ?: return PollResponse(false)
-
-        val hasRequest = response.optBoolean("hasRequest", false)
-        if (!hasRequest) return PollResponse(false)
-
-        return PollResponse(
-            hasRequest = true,
-            request = AssistRequest(
-                fromId = response.optString("requestFrom", ""),
-                fromName = response.optString("requestFromName", "家属"),
-                requestTime = response.optLong("requestTime", 0L),
-                remainingSeconds = response.optInt("remainingSeconds", 0)
-            )
-        )
-    }
+    // v28: pollForRequest 已砍掉（HTTP poll_request 被 WS AssistRequest 完全替代）
 
     // ==================== 信号轮询 ====================
 
@@ -478,44 +408,7 @@ object RemoteAssistManager {
         val timestamp: Long
     )
 
-    /**
-     * 从云端拉取待处理的信号（poll_signal）
-     * 云函数返回后会自动清空已读信号
-     */
-    private suspend fun pollForSignals(context: Context): List<TouchSignal> {
-        val userId = getUserId(context) ?: return emptyList()
-
-        val body = JSONObject().apply {
-            put("action", "poll_signal")
-            put("userId", userId)
-        }
-
-        val response = CloudBaseClient.callFunctionRaw("remote-assist", body)
-            ?: return emptyList()
-
-        if (response.optInt("code", 0) != 200) return emptyList()
-
-        val signalsArr = response.optJSONArray("signals") ?: return emptyList()
-        val signals = mutableListOf<TouchSignal>()
-        for (i in 0 until signalsArr.length()) {
-            val sig = signalsArr.getJSONObject(i)
-            signals.add(TouchSignal(
-                type = sig.optString("type", ""),
-                touchAction = sig.optString("touchAction", null),
-                keyCode = sig.optString("keyCode", null),  // v19.7.3
-                x = sig.optDouble("x", Double.NaN).let { if (it.isNaN()) null else it.toFloat() },
-                y = sig.optDouble("y", 0.0).toFloat(),
-                x1 = sig.optDouble("x1", Double.NaN).let { if (it.isNaN()) null else it.toFloat() },
-                y1 = sig.optDouble("y1", Double.NaN).let { if (it.isNaN()) null else it.toFloat() },
-                x2 = sig.optDouble("x2", Double.NaN).let { if (it.isNaN()) null else it.toFloat() },
-                y2 = sig.optDouble("y2", Double.NaN).let { if (it.isNaN()) null else it.toFloat() },
-                duration = if (sig.has("duration")) sig.optLong("duration", 100L) else null,
-                from = sig.optString("from", null),
-                timestamp = sig.optLong("timestamp", 0L)
-            ))
-        }
-        return signals
-    }
+    // v28: pollForSignals 已砍掉（HTTP poll_signal 被 WS AssistSignal 完全替代）
 
     /**
      * 分发信号到 RemoteAssistService 执行

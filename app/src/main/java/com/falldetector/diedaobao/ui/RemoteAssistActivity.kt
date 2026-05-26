@@ -83,6 +83,7 @@ class RemoteAssistActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private var rejectRunnable: Runnable? = null
     private var remainingSeconds = 30
+    private var isCountdownRunning = false  // v28: 倒计时防重入标志
 
     // 权限自动处理
     private var permissionCheckRunnable: Runnable? = null
@@ -152,14 +153,15 @@ class RemoteAssistActivity : AppCompatActivity() {
                     val prefs = getSharedPreferences("settings", MODE_PRIVATE)
                     val autoAllow = prefs.getBoolean("auto_allow_assist", true)
                     if (autoAllow) {
-                        // 自动允许 → 直接走允许流程
+                        // v28: 自动允许 → 显示Loading，不启动倒计时
                         Log.i(TAG, "onCreate: 重复请求但autoAllow=true，自动允许")
                         tvRequestFrom.text = "$requestFromName 请求协助操作您的手机"
                         containerRequest.visibility = View.VISIBLE
+                        tvRemaining.text = "正在自动连接..."
                         onAllowClicked()
                     } else {
                         showRequestDialog()
-                        startAutoRejectCountdown()
+                        // v28: 重复请求不重启倒计时（防重入）
                     }
                 }
                 return
@@ -169,10 +171,10 @@ class RemoteAssistActivity : AppCompatActivity() {
             val prefs = getSharedPreferences("settings", MODE_PRIVATE)
             val autoAllow = prefs.getBoolean("auto_allow_assist", true)
             if (autoAllow) {
-                // 自动允许 → 直接走允许流程，不弹请求对话框
+                // v28: 自动允许 → 显示Loading界面（不显示倒计时），直接走允许流程
                 tvRequestFrom.text = "$requestFromName 请求协助操作您的手机"
-                // v23: 确保 UI 初始化完成后再调用，避免异步问题
                 containerRequest.visibility = View.VISIBLE
+                tvRemaining.text = "正在自动连接..."
                 onAllowClicked()
             } else {
                 showRequestDialog()
@@ -182,12 +184,10 @@ class RemoteAssistActivity : AppCompatActivity() {
             // v14: 注册自动授权成功广播
             registerAutoPermissionReceiver()
         } catch (e: Exception) {
-            // v19.7.6: 用 Log.e 代替 AppLogger（AppLogger 可能未初始化）
+            // v28: 不再粗暴 restartApp，只记日志让 crash report 收集
             Log.e(TAG, "onCreate 异常!", e)
-            // 写入本地文件（不依赖任何工具类）
             writeCrashLog("onCreate", e)
-            // v20: 自动重启 App，老人不需要手动操作
-            restartApp("onCreate崩溃")
+            finish()  // 关闭当前Activity，但不杀进程
         }
     }
 
@@ -213,10 +213,11 @@ class RemoteAssistActivity : AppCompatActivity() {
                         Log.i(TAG, "onNewIntent: 重复请求但autoAllow=true，自动允许")
                         tvRequestFrom.text = "$requestFromName 请求协助操作您的手机"
                         containerRequest.visibility = View.VISIBLE
+                        tvRemaining.text = "正在自动连接..."
                         onAllowClicked()
                     } else {
                         showRequestDialog()
-                        startAutoRejectCountdown()
+                        // v28: 重复请求不重启倒计时（防重入）
                     }
                 }
                 return
@@ -226,8 +227,8 @@ class RemoteAssistActivity : AppCompatActivity() {
             val autoAllow = prefs.getBoolean("auto_allow_assist", true)
             if (autoAllow) {
                 tvRequestFrom.text = "$requestFromName 请求协助操作您的手机"
-                // v23: 确保 UI 初始化完成后再调用，避免异步问题
                 containerRequest.visibility = View.VISIBLE
+                tvRemaining.text = "正在自动连接..."
                 onAllowClicked()
             } else {
                 showRequestDialog()
@@ -236,8 +237,7 @@ class RemoteAssistActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "onNewIntent 异常!", e)
             writeCrashLog("onNewIntent", e)
-            // v20: 自动重启 App
-            restartApp("onNewIntent崩溃")
+            finish()  // v28: 不再 restartApp，只关闭当前Activity
         }
     }
 
@@ -286,6 +286,7 @@ class RemoteAssistActivity : AppCompatActivity() {
         permissionHandled = false
         waitingForAccessibility = false
         waitingForOverlay = false
+        isCountdownRunning = false  // v28: 重置倒计时防重入标志
         rejectRunnable?.let { handler.removeCallbacks(it) }
         permissionCheckRunnable?.let { handler.removeCallbacks(it) }
 
@@ -709,8 +710,7 @@ class RemoteAssistActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "onResume 异常!", e)
             writeCrashLog("onResume", e)
-            // v20: 自动重启 App
-            restartApp("onResume崩溃")
+            // v28: 不再 restartApp，只记日志
         }
     }
 
@@ -874,34 +874,49 @@ class RemoteAssistActivity : AppCompatActivity() {
         RemoteAssistManager.startSignalPolling(this)
         Log.i(TAG, "信号轮询已启动")
 
-        // 监听子女端主动断开（end_session 信号）
+        // v28: 监听子女端主动断开（end_session 信号），加延迟验证防WS抖动
         RemoteAssistManager.onSessionEnded = {
             runOnUiThread {
-                cleanupAssist()
-                Toast.makeText(this, "子女已断开，协助结束", Toast.LENGTH_LONG).show()
-                finish()
+                // v28: 不再无条件finish，先确认是否真的结束了
+                verifyAndFinish("子女已断开")
             }
         }
 
-        // 监听服务断连
+        // v28: 监听推流断连，加延迟验证
         ScreenCaptureService.instance?.onGuardianDisconnected = {
             runOnUiThread {
-                cleanupAssist()
-                Toast.makeText(this, "连接已断开，协助结束", Toast.LENGTH_LONG).show()
-                finish()
+                verifyAndFinish("连接已断开")
             }
         }
     }
 
     // ==================== 自动拒绝倒计时 ====================
 
+    /**
+     * v28: 启动自动拒绝倒计时（加防重入保护）
+     * 防止多个 onNewIntent 叠加创建多个 Runnable 导致倒计时跳快
+     */
     private fun startAutoRejectCountdown() {
+        // v28: 防重入 — 倒计时已在跑就不重新启动
+        if (isCountdownRunning) {
+            Log.w(TAG, "startAutoRejectCountdown: 倒计时已在跑，忽略重复调用")
+            return
+        }
+        isCountdownRunning = true
+
+        // 先取消旧的（防御性编程）
+        rejectRunnable?.let { handler.removeCallbacks(it) }
+
+        // v28: 重置剩余秒数为60（从intent读取，兜底60）
+        remainingSeconds = intent?.getIntExtra("remaining_seconds", 60) ?: 60
+
         tvRemaining.text = "${remainingSeconds}秒后自动拒绝"
 
         rejectRunnable = object : Runnable {
             override fun run() {
                 remainingSeconds--
                 if (remainingSeconds <= 0) {
+                    isCountdownRunning = false
                     // 超时自动拒绝
                     scope.launch {
                         RemoteAssistManager.respondToRequest(this@RemoteAssistActivity, false)
@@ -949,22 +964,36 @@ class RemoteAssistActivity : AppCompatActivity() {
     }
 
     /**
+     * v28: 断连验证后再退出 — 防止 WS 抖动误触发
+     * 延迟3秒查云端状态，如果仍在协助中则忽略断连信号
+     */
+    private fun verifyAndFinish(reason: String) {
+        if (!isAssisting) return  // 已不在协助中，忽略
+        scope.launch {
+            delay(3000L)  // 等待3秒
+            val status = RemoteAssistManager.checkAssistStatus(this@RemoteAssistActivity)
+            Log.i(TAG, "断连验证: status=$status, isAssisting=$isAssisting")
+            if (status == "active" || status == "assisting") {
+                // 仍在协助中，WS抖动误触发，忽略
+                Log.w(TAG, "断连信号但云端状态仍为active，忽略（$reason）")
+                return@launch
+            }
+            withContext(Dispatchers.Main) {
+                cleanupAssist()
+                Toast.makeText(this@RemoteAssistActivity, "$reason，协助结束", Toast.LENGTH_LONG).show()
+                finish()
+            }
+        }
+    }
+
+    /**
      * v20: 自动重启 App（闪退恢复）
-     * 老人不会手动重启，远程协助窗口崩溃后必须自动恢复
+     * v28: 已禁用 — 全局catch不再调用此方法，让crash report收集真bug
+     * 保留方法体以防其他地方引用
      */
     private fun restartApp(reason: String) {
-        try {
-            Log.i(TAG, "重启App: $reason")
-            val intent = packageManager.getLaunchIntentForPackage(packageName)
-            intent?.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-            startActivity(intent)
-        } catch (e: Exception) {
-            Log.e(TAG, "重启App失败", e)
-        } finally {
-            finish()
-            // 杀进程确保干净重启，避免脏状态
-            android.os.Process.killProcess(android.os.Process.myPid())
-        }
+        Log.w(TAG, "restartApp被调用但已禁用(v28): $reason")
+        finish()
     }
 
     /**

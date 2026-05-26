@@ -256,6 +256,11 @@ object WSClient {
             Log.e(TAG, "发送失败: ${e.message}")
         }
     }
+
+    /**
+     * v28: 公开JSON发送接口，供 ScreenCaptureService 等发送 screen_ready 等消息
+     */
+    fun sendJson(json: JSONObject) = safeSend(json)
     
     /**
      * 推送跌倒事件给子女端

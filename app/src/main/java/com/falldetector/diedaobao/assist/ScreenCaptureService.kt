@@ -117,8 +117,12 @@ class ScreenCaptureService : Service() {
     private val projectionCallback = object : MediaProjection.Callback() {
         override fun onStop() {
             Log.i(TAG, "MediaProjection 被系统停止")
-            updateNotification("屏幕共享已停止")
+            updateNotification("⚠️ 屏幕共享被系统中断")
             stopScreencapMode()
+            // v28: 通知 Activity 屏幕共享被中断，而不是静默失败
+            Handler(mainLooper).post {
+                onGuardianDisconnected?.invoke()
+            }
         }
     }
 
@@ -605,95 +609,31 @@ class ScreenCaptureService : Service() {
     }
 
     /**
-     * 异步上传帧（使用单线程线程池，避免每帧创建 HandlerThread 导致线程泄漏）
+     * v28: 异步发送帧（WS-only，砍掉HTTP帧上传）
+     * WS binary 直传帧数据，低延迟、无HTTP开销、无Base64膨胀
+     * 如果 WS 未连接，跳过此帧（不再HTTP降级，HTTP帧上传是卡顿根因）
      */
     private fun uploadFrameAsync(jpegBytes: ByteArray, frameNum: Int, w: Int, h: Int) {
         val wsOk = com.falldetector.diedaobao.cloud.WSClient.isWSConnected()
-        Log.i(TAG, "uploadFrameAsync[#$frameNum]: start, wsConnected=$wsOk, guardianId=$guardianId")
-        // WS 优先发送帧（低延迟、无HTTP开销）
-        if (wsOk) {
-            val gid = guardianId ?: elderId ?: ""
-            com.falldetector.diedaobao.cloud.WSClient.pushAssistFrameBinary(gid, jpegBytes, w, h, frameNum)
-            uploadFailCount = 0
-            if (frameNum < 5) {
-                Log.i(TAG, "✅ 帧${frameNum}WS发送成功")
+        if (!wsOk) {
+            // v28: WS 未连接时跳过帧，不再走 HTTP 降级
+            // HTTP 帧上传延迟高、带宽浪费、连续失败还会误触断连
+            if (frameNum <= 3 || frameNum % 30 == 0) {
+                AppLogger.w(TAG, "帧#$frameNum 跳过: WS未连接（不再HTTP降级）")
             }
             return
         }
-        
-        // HTTP 降级
-        val b64 = android.util.Base64.encodeToString(jpegBytes, android.util.Base64.NO_WRAP)
-        uploadExecutor.execute {
-            try {
-                val url = URL(SIGNAL_URL)
-                val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.doOutput = true
-                conn.connectTimeout = 10000  // 10s 连接超时
-                conn.readTimeout = 15000      // 15s 读取超时
 
-                val body = org.json.JSONObject().apply {
-                    put("action", "upload_frame")
-                    put("userId", elderId)
-                    put("frameNum", frameNum)
-                    put("width", w)
-                    put("height", h)
-                    put("data", b64)
-                }
+        val gid = guardianId ?: elderId ?: ""
+        if (gid.isBlank()) {
+            AppLogger.e(TAG, "帧#$frameNum 跳过: guardianId和elderId都为空")
+            return
+        }
 
-                val bodyBytes = body.toString().toByteArray(Charsets.UTF_8)
-                conn.outputStream.write(bodyBytes)
-                conn.outputStream.flush()
-                conn.outputStream.close()
-
-                val code = conn.responseCode
-                val responseBody = try {
-                    conn.inputStream.bufferedReader().readText()
-                } catch (_: Exception) {
-                    conn.errorStream?.bufferedReader()?.readText() ?: ""
-                }
-                
-                if (code == 200) {
-                    uploadFailCount = 0
-                    val msg = "✅ 帧${frameNum}上传成功 (${bodyBytes.size/1024}KB)"
-                    Log.i(TAG, msg)
-                    AppLogger.i(TAG, "[帧上传成功] #${frameNum} ${bodyBytes.size/1024}KB")
-                    if (frameNum < 5) updateNotification(msg)
-                    
-                    // 检查云端返回的 status，如果不再是 active 则主动停掉
-                    try {
-                        val respJson = org.json.JSONObject(responseBody)
-                        val respData = respJson.optJSONObject("data") ?: respJson
-                        val status = respData.optString("status", "")
-                        if (status == "normal" || status == "idle" || status == "ended") {
-                            AppLogger.w(TAG, "云端状态已变: $status，主动停止屏幕共享")
-                            Handler(mainLooper).post {
-                                onGuardianDisconnected?.invoke()
-                                stopSelf()
-                            }
-                        }
-                    } catch (_: Exception) {}
-                } else {
-                    uploadFailCount++
-                    val msg = "❌ 帧${frameNum}上传失败: HTTP $code"
-                    AppLogger.w(TAG, "$msg resp=$responseBody")
-                    updateNotification(msg)
-                    // 连续失败5次，可能是云端已断开，主动停掉
-                    if (uploadFailCount >= 5) {
-                        AppLogger.e(TAG, "连续${uploadFailCount}次上传失败，主动停止屏幕共享")
-                        Handler(mainLooper).post {
-                            onGuardianDisconnected?.invoke()
-                            stopSelf()
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                uploadFailCount++
-                val msg = "❌ 帧${frameNum}上传异常: ${e.javaClass.simpleName}"
-                AppLogger.e(TAG, msg)
-                updateNotification(msg)
-            }
+        com.falldetector.diedaobao.cloud.WSClient.pushAssistFrameBinary(gid, jpegBytes, w, h, frameNum)
+        uploadFailCount = 0
+        if (frameNum < 5) {
+            Log.i(TAG, "✅ 帧${frameNum}WS发送成功 (${jpegBytes.size/1024}KB)")
         }
     }
 
@@ -746,7 +686,34 @@ class ScreenCaptureService : Service() {
         nm.notify(NOTIFICATION_ID, notification)
     }
 
+    /**
+     * v28: 通知云端屏幕就绪（WS优先，HTTP降级）
+     */
     private fun notifyScreenReady() {
+        // WS 优先发送
+        if (com.falldetector.diedaobao.cloud.WSClient.isWSConnected()) {
+            try {
+                com.falldetector.diedaobao.cloud.WSClient.sendJson(
+                    org.json.JSONObject().apply {
+                        put("type", "screen_ready")
+                        put("userId", elderId)
+                        put("width", screenWidth)
+                        put("height", screenHeight)
+                    }
+                )
+                Log.i(TAG, "screen_ready 通过WS发送成功")
+                AppLogger.i(TAG, "[screen_ready] WS发送成功")
+            } catch (e: Exception) {
+                Log.e(TAG, "screen_ready WS发送失败: ${e.message}")
+                // 降级到HTTP
+                notifyScreenReadyViaHttp()
+            }
+        } else {
+            notifyScreenReadyViaHttp()
+        }
+    }
+
+    private fun notifyScreenReadyViaHttp() {
         try {
             thread(name = "NotifyReady") {
                 try {
@@ -769,21 +736,13 @@ class ScreenCaptureService : Service() {
                     conn.outputStream.close()
                     
                     val code = conn.responseCode
-                    val resp = try {
-                        if (code in 200..299) conn.inputStream.bufferedReader().readText()
-                        else conn.errorStream?.bufferedReader()?.readText() ?: "HTTP $code"
-                    } catch (e: Exception) { "read error: ${e.message}" }
-                    
                     if (code in 200..299) {
-                        Log.i(TAG, "screen_ready 成功: $resp")
-                        AppLogger.i(TAG, "[screen_ready] 成功通知云端: $resp")
+                        Log.i(TAG, "screen_ready HTTP发送成功")
                     } else {
-                        Log.e(TAG, "screen_ready 失败: HTTP $code, resp=$resp")
-                        AppLogger.e(TAG, "screen_ready 失败: HTTP $code")
+                        Log.e(TAG, "screen_ready HTTP发送失败: $code")
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "screen_ready 连接异常: ${e.javaClass.simpleName}: ${e.message}")
-                    AppLogger.e(TAG, "screen_ready 连接异常: ${e.message}")
+                    Log.e(TAG, "screen_ready HTTP异常: ${e.message}")
                 }
             }
         } catch (e: Exception) {
