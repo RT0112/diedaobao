@@ -417,6 +417,10 @@ app.post('/geofence', (req, res) => {
 app.post('/remote-assist', (req, res) => {
   try {
     const body = req.body
+    
+    // ✅ 调试日志：打印所有请求
+    console.log(`[remote-assist] 收到请求: action=${body.action}, userId=${body.userId}, elderId=${body.elderId}, from=${body.from}`)
+    console.log(`[remote-assist] body=${JSON.stringify(body).substring(0, 200)}`)
     const { action, userId, elderId, guardianId, guardianName, accepted, signal, to, from } = body
     const db = getDb()
     const targetId = elderId || userId
@@ -585,16 +589,51 @@ app.post('/remote-assist', (req, res) => {
     }
 
     if (action === 'end') {
-      if (!targetId) return res.json({ code: 400, message: '缺少 userId 或 elderId' })
-      const user = db.prepare('SELECT id, remoteAssist FROM users WHERE id=?').get(targetId)
-      if (!user) return res.json({ code: 404, message: '用户不存在' })
-      const ra = user.remoteAssist ? JSON.parse(user.remoteAssist) : {}
-      if (ra.status !== 'active') return res.json({ code: 400, message: '当前没有活跃的协助会话' })
+      console.log(`[AssistEnd] 开始处理end请求: targetId=${targetId}, elderId=${elderId}`)
+      
+      // ✅ 修复：自动查找子女绑定的老人ID
+      let actualElderId = elderId || targetId
+      let user = db.prepare('SELECT id, remoteAssist FROM users WHERE id=?').get(actualElderId)
+      
+      // 如果找不到或remoteAssist为空，尝试查找family_bindings
+      if (!user || !user.remoteAssist || user.remoteAssist === '{}') {
+        console.log(`[AssistEnd] 未找到remoteAssist，尝试查找绑定的老人, targetId=${targetId}`)
+        const binding = db.prepare('SELECT elderId FROM family_bindings WHERE familyId=? AND status=?').get(targetId, 'active')
+        if (binding) {
+          actualElderId = binding.elderId
+          user = db.prepare('SELECT id, remoteAssist FROM users WHERE id=?').get(actualElderId)
+          console.log(`[AssistEnd] 找到绑定老人: ${actualElderId}`)
+        }
+      }
+      
+      if (!user) {
+        console.log(`[AssistEnd] 错误: 用户不存在, actualElderId=${actualElderId}`)
+        return res.json({ code: 404, message: '用户不存在' })
+      }
+      
+      let ra = {}
+      try {
+        ra = user.remoteAssist ? JSON.parse(user.remoteAssist) : {}
+      } catch (e) {
+        console.log(`[AssistEnd] 错误: JSON解析失败: ${e.message}`)
+        return res.json({ code: 500, message: 'remoteAssist字段格式错误' })
+      }
+      
+      console.log(`[AssistEnd] ra.status=${ra.status}, ra.requestFrom=${ra.requestFrom}`)
+      if (ra.status !== 'active') {
+        console.log(`[AssistEnd] 错误: status不是active, 当前=${ra.status}`)
+        return res.json({ code: 400, message: '当前没有活跃的协助会话' })
+      }
 
-      // v30: 推送给老人端（targetId），让老人端关闭协助会话
-      // 原代码误推给子女端（requestFrom），导致老人端收不到结束信号
-      sendToUser(targetId, { type: 'assist_end', data: { from: from || userId, reason: 'ended', timestamp: Date.now() } })
-      Log.log(`[AssistEnd] 已推送assist_end给老人端 ${targetId}`)
+      // ✅ 修复：同时向双端推送assist_end
+      sendToUser(targetId, { type: 'assist_end', data: { from: from || userId, reason: 'ended', timestamp: Date.now(), sessionId: ra.sessionId } })
+      console.log(`[AssistEnd] 已推送assist_end给老人端 ${targetId}, sessionId=${ra.sessionId}`)
+
+      // 同时推送給子女端（ra.requestFrom），如果存在
+      if (ra.requestFrom) {
+        sendToUser(ra.requestFrom, { type: 'assist_end', data: { from: targetId, reason: 'ended', timestamp: Date.now(), sessionId: ra.sessionId } })
+        console.log(`[AssistEnd] 已推送assist_end给子女端 ${ra.requestFrom}, sessionId=${ra.sessionId}`)
+      }
 
       // 清理
       db.prepare('DELETE FROM screen_frames WHERE id=?').run(`frame_${targetId}`)

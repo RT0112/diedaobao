@@ -172,7 +172,18 @@ function handleMessage(ws, msg) {
 
     // --- 远程协助结束 ---
     case 'assist_end':
-      broadcastToRoom(ws.userId, { type: 'assist_end', data: { from: ws.userId, reason: data?.reason || 'ended' } }, ws.userId)
+      // v24: 查找当前sessionId并附加到推送，供老人端精确匹配
+      try {
+        const assistUser = db.prepare('SELECT remoteAssist FROM users WHERE id=?').get(ws.userId)
+        let assistSessionId = null
+        if (assistUser?.remoteAssist) {
+          try { assistSessionId = JSON.parse(assistUser.remoteAssist).sessionId } catch {}
+        }
+        broadcastToRoom(ws.userId, { type: 'assist_end', data: { from: ws.userId, reason: data?.reason || 'ended', sessionId: assistSessionId || data?.sessionId } }, ws.userId)
+      } catch (e) {
+        console.error('[ws] assist_end DB查询失败:', e.message)
+        broadcastToRoom(ws.userId, { type: 'assist_end', data: { from: ws.userId, reason: data?.reason || 'ended', sessionId: data?.sessionId } }, ws.userId)
+      }
       break
 
     // --- 远程协助信令（触摸/按键，双向）---
