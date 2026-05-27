@@ -601,24 +601,27 @@ class FallDetectionService : Service() {
 
         val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
+        // v0.48: GPS从持续1秒改为5分钟间隔（省电>95%），围栏检测延迟约5分钟可接受
         try {
             locationManager.requestLocationUpdates(
-                LocationManager.GPS_PROVIDER, 1000L, 5f, locationListener
+                LocationManager.GPS_PROVIDER, 5 * 60_000L, 100f, locationListener
             )
         } catch (e: Exception) {
             AppLogger.w(TAG, "GPS位置监听注册失败: ${e.message}")
         }
 
-        try {
-            locationManager.requestLocationUpdates(
-                LocationManager.NETWORK_PROVIDER, 1000L, 5f, locationListener
-            )
-        } catch (e: Exception) {
-            AppLogger.w(TAG, "网络位置监听注册失败: ${e.message}")
-        }
+        // v0.48: 移除NETWORK_PROVIDER持续注册（老人手机可能无网络，不可靠）
+        // 网络定位仅在子女请求位置时 requestSingleUpdate 尝试（已有逻辑）
 
-        Log.i(TAG, "📍 GPS监听已启动（本地围栏检测 + 按需新鲜位置）")
+        Log.i(TAG, "📍 GPS监听已启动（5分钟间隔，围栏检测 + 按需新鲜位置）")
         registerLocationPermissionReceiver()
+
+        // v0.48: GPS预热 — 服务启动后立即获取一次fix，后续热启动1-5秒
+        serviceScope.launch {
+            delay(3000)
+            tryGetFreshAndUpload()
+            Log.i(TAG, "📍 GPS预热完成")
+        }
     }
 
     private fun stopLocationSync() {
