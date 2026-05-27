@@ -30,6 +30,7 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.*
 import kotlin.concurrent.thread
 
 /**
@@ -135,6 +136,19 @@ class ScreenCaptureService : Service() {
         Thread(r, "FrameUpload").apply { isDaemon = true }
     }
 
+    // 优化1+2: 最新帧缓冲 + 独立发送线程（解决帧积压导致8秒+延迟）
+    // processFrame()只存最新帧，sender线程取最新帧发送，旧帧自动丢弃
+    internal class PendingFrame(
+        val jpegBytes: ByteArray,
+        val frameNum: Int,
+        val width: Int,
+        val height: Int
+    )
+    @Volatile
+    private var latestPendingFrame: PendingFrame? = null
+    private var frameSenderJob: Job? = null
+    private val frameSenderScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -209,6 +223,8 @@ class ScreenCaptureService : Service() {
         isRunning = false
         stopScreencapMode()
         stopCapture()
+        frameSenderJob?.cancel()
+        frameSenderScope.cancel()
         uploadExecutor.shutdownNow()
         captureThread?.quitSafely()
         // 取消通知
@@ -319,6 +335,9 @@ class ScreenCaptureService : Service() {
             
             Log.i(TAG, "VD ok")
 
+            // 优化1+2: 启动独立帧发送线程
+            startFrameSender()
+
             // 通知云端屏幕就绪
             notifyScreenReady()
 
@@ -350,6 +369,8 @@ class ScreenCaptureService : Service() {
         updateNotification("📷 截图替补模式")
         notifyScreenReady()
         updateState(State.STREAMING, null)
+        // 优化1+2: 启动独立帧发送线程
+        startFrameSender()
 
         screencapExecutor = Executors.newSingleThreadScheduledExecutor { r ->
             Thread(r, "AssistScreenshot").apply { isDaemon = true }
@@ -425,7 +446,8 @@ class ScreenCaptureService : Service() {
                         updateNotification("已截图${frameCount}帧")
                     }
 
-                    uploadFrameAsync(jpegBytes, frameCount, targetW, targetH)
+                    // 优化1+2: 存入最新帧缓冲，由独立发送线程异步发送
+                    latestPendingFrame = PendingFrame(jpegBytes, frameCount, targetW, targetH)
                 } catch (e: Exception) {
                     AppLogger.e(TAG, "截图处理异常: ${e.message}")
                 }
@@ -528,7 +550,8 @@ class ScreenCaptureService : Service() {
                     updateNotification(msg)
                 }
                 
-                uploadFrameAsync(jpegBytes, frameCount, targetW, targetH)
+                // 优化1+2: 存入最新帧缓冲，由独立发送线程异步发送
+                latestPendingFrame = PendingFrame(jpegBytes, frameCount, targetW, targetH)
                 lastUploadTime = now
                 frameCount++
 
@@ -609,31 +632,51 @@ class ScreenCaptureService : Service() {
     }
 
     /**
-     * v28: 异步发送帧（WS-only，砍掉HTTP帧上传）
-     * WS binary 直传帧数据，低延迟、无HTTP开销、无Base64膨胀
-     * 如果 WS 未连接，跳过此帧（不再HTTP降级，HTTP帧上传是卡顿根因）
+     * 优化1+2: 独立帧发送线程
+     * - 每 FRAME_INTERVAL_MS 从 latestPendingFrame 取最新帧发送
+     * - 自动丢弃旧帧（只发最新），避免OkHttp发送缓冲区积压
+     * - 不阻塞 captureHandler，帧采集和发送解耦
      */
-    private fun uploadFrameAsync(jpegBytes: ByteArray, frameNum: Int, w: Int, h: Int) {
+    private fun startFrameSender() {
+        frameSenderJob?.cancel()
+        frameSenderJob = frameSenderScope.launch {
+            Log.i(TAG, "帧发送线程已启动 (间隔${FRAME_INTERVAL_MS}ms)")
+            while (isActive && !isDisposed.get()) {
+                val frame = latestPendingFrame
+                if (frame != null) {
+                    latestPendingFrame = null
+                    sendFrameViaWS(frame)
+                }
+                delay(FRAME_INTERVAL_MS)
+            }
+            Log.i(TAG, "帧发送线程已退出")
+        }
+    }
+
+    /**
+     * 优化1+2: WS发送单帧（从发送线程调用，不阻塞captureHandler）
+     */
+    private fun sendFrameViaWS(frame: PendingFrame) {
         val wsOk = com.falldetector.diedaobao.cloud.WSClient.isWSConnected()
         if (!wsOk) {
-            // v28: WS 未连接时跳过帧，不再走 HTTP 降级
-            // HTTP 帧上传延迟高、带宽浪费、连续失败还会误触断连
-            if (frameNum <= 3 || frameNum % 30 == 0) {
-                AppLogger.w(TAG, "帧#$frameNum 跳过: WS未连接（不再HTTP降级）")
+            if (frame.frameNum <= 3 || frame.frameNum % 30 == 0) {
+                AppLogger.w(TAG, "帧#${frame.frameNum} 跳过: WS未连接")
             }
             return
         }
 
         val gid = guardianId ?: elderId ?: ""
         if (gid.isBlank()) {
-            AppLogger.e(TAG, "帧#$frameNum 跳过: guardianId和elderId都为空")
+            AppLogger.e(TAG, "帧#${frame.frameNum} 跳过: guardianId和elderId都为空")
             return
         }
 
-        com.falldetector.diedaobao.cloud.WSClient.pushAssistFrameBinary(gid, jpegBytes, w, h, frameNum)
+        com.falldetector.diedaobao.cloud.WSClient.pushAssistFrameBinary(
+            gid, frame.jpegBytes, frame.width, frame.height, frame.frameNum
+        )
         uploadFailCount = 0
-        if (frameNum < 5) {
-            Log.i(TAG, "✅ 帧${frameNum}WS发送成功 (${jpegBytes.size/1024}KB)")
+        if (frame.frameNum < 5) {
+            Log.i(TAG, "✅ 帧${frame.frameNum}WS发送成功 (${frame.jpegBytes.size/1024}KB)")
         }
     }
 
