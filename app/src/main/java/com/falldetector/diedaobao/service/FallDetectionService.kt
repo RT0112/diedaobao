@@ -565,7 +565,10 @@ class FallDetectionService : Service() {
                 }
                 // 动态间隔：加急模式5秒，常态30秒
                 // 加急模式在子女请求位置后触发，最多持续60秒自动恢复
-                val interval = if (isUrgentPull) 3_000L else 10_000L
+                // v28: 协助期间常态30秒（非协助10秒），减少ngrok带宽竞争
+                val interval = if (isUrgentPull) 3_000L else {
+                    if (com.falldetector.diedaobao.util.LogUploader.assistThrottleEnabled) 30_000L else 10_000L
+                }
                 delay(interval)
             }
             AppLogger.w(TAG, "按需拉取轮询已停止")

@@ -37,6 +37,13 @@ object LogUploader : Thread.UncaughtExceptionHandler {
     // 最大缓存条数
     private const val MAX_CACHED = 50
     
+    // v28: 远程协助期间节流upload-log，减少带宽竞争
+    @Volatile
+    var assistThrottleEnabled = false  // true=协助中，仅上传ERROR/CRASH级别
+    private var throttledLogBuffer = mutableListOf<String>()
+    private var lastThrottledFlush = 0L
+    private const val THROTTLE_FLUSH_INTERVAL = 30_000L  // 协助期间每30秒批量上传一次INFO级别
+    
     private var originalHandler: Thread.UncaughtExceptionHandler? = null
     private lateinit var appContext: Context
     
@@ -131,8 +138,37 @@ object LogUploader : Thread.UncaughtExceptionHandler {
         message: String,
         stackTrace: String?
     ) {
+        // v28: 远程协助期间节流 — 只立即上传ERROR/CRASH，INFO级别缓存后批量发
+        if (assistThrottleEnabled && level == "INFO") {
+            val payload = buildJson(userId, level, tag, message, stackTrace)
+            synchronized(throttledLogBuffer) {
+                throttledLogBuffer.add(payload)
+                val now = System.currentTimeMillis()
+                if (now - lastThrottledFlush >= THROTTLE_FLUSH_INTERVAL) {
+                    flushThrottledLogs()
+                }
+            }
+            return
+        }
         val payload = buildJson(userId, level, tag, message, stackTrace)
         sendRequest(payload)
+    }
+    
+    /**
+     * v28: 批量上传节流期间缓存的INFO日志
+     */
+    private fun flushThrottledLogs() {
+        if (throttledLogBuffer.isEmpty()) return
+        val batch = synchronized(throttledLogBuffer) {
+            val copy = throttledLogBuffer.toList()
+            throttledLogBuffer.clear()
+            lastThrottledFlush = System.currentTimeMillis()
+            copy
+        }
+        // 只发最后一条（最关键），其余丢弃（协助期间不需要海量INFO日志）
+        if (batch.isNotEmpty()) {
+            sendRequest(batch.last())
+        }
     }
     
     /**

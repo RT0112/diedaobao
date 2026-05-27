@@ -70,9 +70,9 @@ class ScreenCaptureService : Service() {
             private set
         private val SIGNAL_URL = "$BASE_URL/remote-assist"
 
-        // v26: 帧率提升至3fps，改善子女端延迟体验
-        private const val TARGET_FPS = 3  // 3fps，平衡流畅度和网络压力
-        private const val FRAME_INTERVAL_MS = (1000L / TARGET_FPS) // 333ms
+        // v28: 帧率提升至5fps，更丝滑
+        private const val TARGET_FPS = 5  // 5fps，流畅度优先
+        private const val FRAME_INTERVAL_MS = (1000L / TARGET_FPS) // 200ms
 
         // 最大上传延迟（超过就丢帧）
         private const val MAX_UPLOAD_TIME_MS = 2000L
@@ -238,6 +238,8 @@ class ScreenCaptureService : Service() {
 
     private fun startCapture(resultCode: Int, data: Intent) {
         try {
+            // v28: 协助期间节流upload-log，减少带宽竞争
+            com.falldetector.diedaobao.util.LogUploader.assistThrottleEnabled = true
             updateNotification("获取MediaProjection...")
             val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             mediaProjection = manager.getMediaProjection(resultCode, data)
@@ -458,6 +460,8 @@ class ScreenCaptureService : Service() {
     }
 
     private fun stopCapture() {
+        // v28: 协助结束，恢复upload-log正常频率
+        com.falldetector.diedaobao.util.LogUploader.assistThrottleEnabled = false
         try {
             imageReader?.close()
             imageReader = null
@@ -539,7 +543,6 @@ class ScreenCaptureService : Service() {
                     return
                 }
 
-                val b64 = android.util.Base64.encodeToString(jpegBytes, android.util.Base64.NO_WRAP)
                 bitmap.recycle()
 
                 // 前5帧详细日志+通知
