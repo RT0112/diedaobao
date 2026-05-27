@@ -13,6 +13,10 @@ const clients = new Map()
 // 房间管理：elderId → Set<userId>（老人+所有绑定的家属）
 const rooms = new Map()
 
+// v28: 帧转发计数（诊断延迟用）
+let frameRelayCount = 0
+let frameRelayDropped = 0
+
 let wss = null
 
 /**
@@ -94,9 +98,19 @@ function handleBinaryMessage(ws, raw) {
     const { to, w, h, fn } = header
     if (!to || jpegData.length === 0) return
 
+    // v28: 帧转发计数+周期日志，诊断延迟用
+    frameRelayCount++
+    if (frameRelayCount === 1 || frameRelayCount % 100 === 0) {
+      console.log(`[WS-frame] 帧转发 #${frameRelayCount}: ${jpegData.length}B, elder=${ws.userId}, guardian=${to}, fn=${fn}, w=${w}, h=${h}`)
+    }
+
     // 二进制直传给子女端 Guardian
     const guardWs = clients.get(to)
     if (!guardWs || guardWs.readyState !== 1) {
+      frameRelayDropped++
+      if (frameRelayDropped % 10 === 1) {
+        console.log(`[WS-frame] 帧丢弃 #${frameRelayDropped}: guardian=${to} 不在线, fn=${fn}`)
+      }
       // 降级：存储帧到DB供HTTP轮询
       try {
         const db = getDb()
